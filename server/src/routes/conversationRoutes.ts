@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import multer from 'multer';
 
 import type { Orchestrator } from '../orchestrator';
 import type { InteractionLogger } from '../services/interactionLogger';
@@ -8,6 +9,7 @@ export const createConversationRouter = (
   logger: InteractionLogger
 ): Router => {
   const router = Router();
+  const upload = multer();
 
   router.post('/', (_req, res) => {
     const conversation = orchestrator.createConversation();
@@ -15,7 +17,7 @@ export const createConversationRouter = (
   });
 
   router.get('/:conversationId/messages', (req, res) => {
-    const { conversationId } = req.params;
+    const { conversationId } = req.params as { conversationId: string };
 
     const conversation = orchestrator.getConversation(conversationId);
 
@@ -27,17 +29,39 @@ export const createConversationRouter = (
     res.json({ messages: conversation.messages, createdAt: conversation.createdAt });
   });
 
-  router.post('/:conversationId/messages', async (req, res, next) => {
+  router.post('/:conversationId/messages', upload.single('attachment'), async (req, res, next) => {
     try {
-      const { conversationId } = req.params;
+      const { conversationId } = req.params as { conversationId: string };
       const { content } = req.body as { content?: string };
 
-      if (!content || content.trim().length === 0) {
+      if (!content) {
         res.status(400).json({ error: 'Message content is required' });
         return;
       }
 
-      const result = await orchestrator.handleUserMessage(conversationId, content.trim());
+      const trimmed = content.trim();
+
+      if (trimmed.length === 0) {
+        res.status(400).json({ error: 'Message content is required' });
+        return;
+      }
+
+      const attachments = req.file
+        ? [
+            {
+              originalName: req.file.originalname,
+              mimetype: req.file.mimetype,
+              buffer: req.file.buffer,
+              size: req.file.size,
+            },
+          ]
+        : undefined;
+
+      const result = await orchestrator.handleUserMessage(
+        conversationId,
+        trimmed,
+        attachments ? { attachments } : undefined
+      );
       res.json(result);
     } catch (error) {
       next(error);
@@ -46,7 +70,7 @@ export const createConversationRouter = (
 
   router.get('/:conversationId/log', async (req, res, next) => {
     try {
-      const { conversationId } = req.params;
+      const { conversationId } = req.params as { conversationId: string };
       const entries = await logger.read(conversationId, 200);
       res.json({ entries });
     } catch (error) {

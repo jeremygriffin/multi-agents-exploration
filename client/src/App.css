@@ -119,6 +119,11 @@ body {
   color: #fbcfe8;
 }
 
+.agent-chip.storage {
+  background: rgba(34, 197, 94, 0.2);
+  color: #bbf7d0;
+}
+
 .input-panel {
   display: flex;
   flex-direction: column;
@@ -143,7 +148,8 @@ body {
 
 .input-actions {
   display: flex;
-  justify-content: flex-end;
+  justify-content: space-between;
+  align-items: center;
 }
 
 .input-actions button {
@@ -160,6 +166,22 @@ body {
   background: rgba(148, 163, 184, 0.3);
   color: rgba(226, 232, 240, 0.4);
   cursor: not-allowed;
+}
+
+.file-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.75rem;
+  background: rgba(148, 163, 184, 0.2);
+  color: #e2e8f0;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.file-button:hover {
+  background: rgba(148, 163, 184, 0.3);
 }
 
 .error-message {

@@ -1,4 +1,9 @@
-export type AgentId = 'greeting' | 'summarizer' | 'time_helper' | 'input_coach';
+export type AgentId =
+  | 'greeting'
+  | 'summarizer'
+  | 'time_helper'
+  | 'input_coach'
+  | 'document_store';
 
 export interface CreateConversationResponse {
   id: string;

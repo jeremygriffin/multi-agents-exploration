@@ -4,8 +4,9 @@ Local playground demonstrating the [OpenAI Agents SDK](https://github.com/openai
 
 ## Features
 - Manager agent that selects and coordinates micro-agents per user message
-- Greeting, summarizer, time helper, and input coach agents powered by OpenAI
+- Greeting, summarizer, time helper, input coach, and document store agents powered by OpenAI
 - Express backend with per-conversation log files under `server/logs/`
+- Document storage workflow that saves uploads to `server/storage/` with auto-generated analysis notes
 - React/Vite chat client showing agent attribution and manager notes
 - TypeScript across backend and frontend with Vitest coverage for shared helpers
 
@@ -34,7 +35,7 @@ Open two terminals:
    ```bash
    npm run dev:client
    ```
-Visit http://localhost:5173 to chat with the agents. Each conversation creates a UUID-named log file in `server/logs/` capturing user messages, manager plans, and agent responses.
+Visit http://localhost:5173 to chat with the agents. Each conversation creates a UUID-named log file in `server/logs/` capturing user messages, manager plans, and agent responses. Attach a `.pdf`, `.doc`, `.docx`, `.txt`, or `.md` file alongside a prompt such as “store this file” to trigger the document store agent.
 
 ## Testing & Builds
 - Run tests across workspaces:
@@ -52,7 +53,8 @@ project/
 ├─ docs/                 # Requirements and high-level plan
 ├─ server/               # Express orchestrator, agents, and logging utilities
 ├─ client/               # React/Vite chat UI
-└─ logs/                 # Generated per-conversation logs (gitignored)
+├─ logs/                 # Generated per-conversation logs (gitignored)
+└─ storage/             # Uploaded documents and analysis notes (gitignored)
 ```
 
 Feel free to extend the agent roster, adjust routing logic, or integrate additional tools as you explore the SDK.

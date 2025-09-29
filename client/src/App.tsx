@@ -23,6 +23,8 @@ const agentColor = (agent?: AgentReply['agent'] | 'manager'): string => {
       return 'agent-chip time';
     case 'input_coach':
       return 'agent-chip coach';
+    case 'document_store':
+      return 'agent-chip storage';
     case 'manager':
       return 'agent-chip manager';
     default:
@@ -34,6 +36,7 @@ const App = () => {
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatEntry[]>([]);
   const [input, setInput] = useState('');
+  const [attachment, setAttachment] = useState<File | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -84,13 +87,22 @@ const App = () => {
       content: trimmed,
     };
 
-    setMessages((prev) => [...prev, userEntry]);
+    const attachmentNote = attachment
+      ? [{
+          id: getEntryId(),
+          role: 'note' as const,
+          content: `Attached file: ${attachment.name}`,
+          agent: 'manager' as const,
+        }]
+      : [];
+
+    setMessages((prev) => [...prev, userEntry, ...attachmentNote]);
     setInput('');
     setIsLoading(true);
     setError(null);
 
     try {
-      const response = await sendMessage(conversationId, trimmed);
+      const response = await sendMessage(conversationId, trimmed, attachment ?? undefined);
       const replies: ChatEntry[] = response.responses.map((reply) => ({
         id: getEntryId(),
         role: 'agent',
@@ -120,6 +132,7 @@ const App = () => {
       ]);
     } finally {
       setIsLoading(false);
+      setAttachment(null);
     }
   };
 
@@ -158,11 +171,24 @@ const App = () => {
           <textarea
             value={input}
             onChange={(event) => setInput(event.target.value)}
-            placeholder="Ask for a greeting, summary, time check, or writing tips..."
+            placeholder="Ask for a greeting, summary, time check, writing tips, or store a file..."
             rows={3}
             disabled={!conversationId || isLoading}
           />
           <div className="input-actions">
+            <label className="file-button">
+              <span>{attachment ? `Attached: ${attachment.name}` : 'Attach file'}</span>
+              <input
+                type="file"
+                onChange={(event) => {
+                  const file = event.target.files?.[0] ?? null;
+                  setAttachment(file);
+                }}
+                accept=".pdf,.doc,.docx,.txt,.md"
+                disabled={isLoading}
+                hidden
+              />
+            </label>
             <button type="submit" disabled={!canSend}>
               Send
             </button>

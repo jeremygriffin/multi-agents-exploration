@@ -1,4 +1,10 @@
-export type AgentId = 'manager' | 'greeting' | 'summarizer' | 'time_helper' | 'input_coach';
+export type AgentId =
+  | 'manager'
+  | 'greeting'
+  | 'summarizer'
+  | 'time_helper'
+  | 'input_coach'
+  | 'document_store';
 
 export interface ChatMessage {
   id: string;
@@ -33,6 +39,13 @@ export interface HandleMessageResult {
   conversation: Conversation;
   responses: AgentResponse[];
   managerNotes?: string;
+}
+
+export interface UploadedFile {
+  originalName: string;
+  mimetype: string;
+  buffer: Buffer;
+  size: number;
 }
 
 export interface ConversationLogEntry {

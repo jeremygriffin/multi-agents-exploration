@@ -30,9 +30,25 @@ export const createConversation = async (): Promise<CreateConversationResponse> 
 
 export const sendMessage = async (
   conversationId: string,
-  content: string
+  content: string,
+  attachment?: File
 ): Promise<SendMessageResponse> => {
-  const response = await fetch(`${BASE_URL}/api/conversations/${conversationId}/messages`, {
+  const url = `${BASE_URL}/api/conversations/${conversationId}/messages`;
+
+  if (attachment) {
+    const formData = new FormData();
+    formData.append('content', content);
+    formData.append('attachment', attachment);
+
+    const response = await fetch(url, {
+      method: 'POST',
+      body: formData,
+    });
+
+    return handleResponse<SendMessageResponse>(response);
+  }
+
+  const response = await fetch(url, {
     method: 'POST',
     headers: jsonHeaders,
     body: JSON.stringify({ content }),
@@ -51,6 +67,8 @@ export const formatAgentLabel = (agent: AgentReply['agent'] | 'manager'): string
       return 'Time Helper Agent';
     case 'input_coach':
       return 'Input Coach Agent';
+    case 'document_store':
+      return 'Document Store Agent';
     case 'manager':
       return 'Manager Notes';
     default:

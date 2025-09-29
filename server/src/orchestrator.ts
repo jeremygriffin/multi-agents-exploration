@@ -1,11 +1,12 @@
 import { randomUUID } from 'crypto';
 
+import { DocumentStoreAgent } from './agents/documentStoreAgent';
 import { GreetingAgent } from './agents/greetingAgent';
 import { InputCoachAgent } from './agents/inputCoachAgent';
 import { ManagerAgent } from './agents/managerAgent';
 import { SummarizerAgent } from './agents/summarizerAgent';
 import { TimeHelperAgent } from './agents/timeHelperAgent';
-import type { AgentResponse, Conversation, HandleMessageResult } from './types';
+import type { AgentResponse, Conversation, HandleMessageResult, UploadedFile } from './types';
 import type { Agent } from './agents/baseAgent';
 import type { ConversationStore } from './services/conversationStore';
 import type { InteractionLogger } from './services/interactionLogger';
@@ -15,12 +16,14 @@ const greetingAgent = new GreetingAgent();
 const summarizerAgent = new SummarizerAgent();
 const timeHelperAgent = new TimeHelperAgent();
 const inputCoachAgent = new InputCoachAgent();
+const documentStoreAgent = new DocumentStoreAgent();
 
 const agentRegistry: Record<string, Agent> = {
   greeting: greetingAgent,
   summarizer: summarizerAgent,
   time_helper: timeHelperAgent,
   input_coach: inputCoachAgent,
+  document_store: documentStoreAgent,
 };
 
 export class Orchestrator {
@@ -38,7 +41,11 @@ export class Orchestrator {
     return this.store.getConversation(conversationId);
   }
 
-  async handleUserMessage(conversationId: string, message: string): Promise<HandleMessageResult> {
+  async handleUserMessage(
+    conversationId: string,
+    message: string,
+    options?: { attachments?: UploadedFile[] }
+  ): Promise<HandleMessageResult> {
     const conversation = this.store.getConversation(conversationId);
 
     if (!conversation) {
@@ -59,10 +66,23 @@ export class Orchestrator {
       timestamp: new Date(userMessage.timestamp).toISOString(),
       event: 'user_message',
       conversationId,
-      payload: { content: message },
+      payload: {
+        content: message,
+        attachments: options?.attachments?.map((file) => ({
+          originalName: file.originalName,
+          mimetype: file.mimetype,
+          size: file.size,
+        })),
+      },
     });
 
-    const plan = await manager.plan(conversation, message);
+    const managerInput = options?.attachments?.length
+      ? `${message}\n\nAttachment metadata: ${options.attachments
+          .map((file) => `${file.originalName} (${file.mimetype}, ${file.size} bytes)`)
+          .join(', ')}`
+      : message;
+
+    const plan = await manager.plan(conversation, managerInput);
 
     await this.logger.append({
       timestamp: new Date().toISOString(),
@@ -72,7 +92,9 @@ export class Orchestrator {
       payload: plan,
     });
 
-    const actions = plan.actions.length > 0 ? plan.actions : [{ agent: 'greeting' as const }];
+    const actions = plan.actions.length > 0
+      ? plan.actions
+      : [{ agent: options?.attachments?.length ? ('document_store' as const) : ('greeting' as const) }];
     const responses: AgentResponse[] = [];
 
     for (const action of actions) {
@@ -93,7 +115,11 @@ export class Orchestrator {
           content: msg.content,
         }));
 
-      const agentResult = await agent.handle({ conversation, userMessage: delegatedMessage });
+      const agentResult = await agent.handle({
+        conversation,
+        userMessage: delegatedMessage,
+        ...(options?.attachments ? { attachments: options.attachments } : {}),
+      });
 
       const assistantMessage = {
         id: randomUUID(),
@@ -117,6 +143,11 @@ export class Orchestrator {
           delegatedMessage,
           managerInstructions: action.instructions,
           conversationSummary,
+          attachments: options?.attachments?.map((file) => ({
+            originalName: file.originalName,
+            mimetype: file.mimetype,
+            size: file.size,
+          })),
           content: agentResult.content,
           debug: agentResult.debug,
         },

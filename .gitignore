@@ -6,3 +6,5 @@ client/dist
 
 server/logs
 .idea
+server/storage
+.idea

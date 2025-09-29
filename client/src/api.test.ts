@@ -8,6 +8,7 @@ describe('formatAgentLabel', () => {
     expect(formatAgentLabel('summarizer')).toBe('Summarizer Agent');
     expect(formatAgentLabel('time_helper')).toBe('Time Helper Agent');
     expect(formatAgentLabel('input_coach')).toBe('Input Coach Agent');
+    expect(formatAgentLabel('document_store')).toBe('Document Store Agent');
     expect(formatAgentLabel('manager')).toBe('Manager Notes');
   });
 
