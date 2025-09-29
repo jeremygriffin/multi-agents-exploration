@@ -92,12 +92,13 @@ export class DocumentStoreAgent implements Agent {
     await writeFile(analysisPath, analysisContent, 'utf8');
 
     return {
-      content: `Stored the file as ${storedName} and generated an analysis note.`,
+      content: `Stored the file as ${storedName} and generated ${analysisName}.\n\nSummary:\n${summary}`,
       debug: {
         storedPath,
         analysisPath,
         mimetype: attachment.mimetype,
         size: attachment.size,
+        summary,
       },
     };
   }
