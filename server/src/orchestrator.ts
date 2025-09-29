@@ -85,6 +85,14 @@ export class Orchestrator {
         ? `${message}\n\nManager instructions: ${action.instructions}`
         : message;
 
+      const conversationSummary = conversation.messages
+        .slice(-5)
+        .map((msg) => ({
+          role: msg.role,
+          agent: msg.agent,
+          content: msg.content,
+        }));
+
       const agentResult = await agent.handle({ conversation, userMessage: delegatedMessage });
 
       const assistantMessage = {
@@ -106,7 +114,11 @@ export class Orchestrator {
         conversationId,
         agent: action.agent,
         payload: {
+          delegatedMessage,
+          managerInstructions: action.instructions,
+          conversationSummary,
           content: agentResult.content,
+          debug: agentResult.debug,
         },
       });
     }

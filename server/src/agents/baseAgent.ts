@@ -7,6 +7,7 @@ export interface AgentContext {
 
 export interface AgentResult {
   content: string;
+  debug?: Record<string, unknown>;
 }
 
 export interface Agent {

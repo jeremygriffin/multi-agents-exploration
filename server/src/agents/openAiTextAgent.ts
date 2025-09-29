@@ -41,6 +41,11 @@ export class OpenAiTextAgent implements Agent {
     const result = await this.agent.createChatCompletion(prompt);
     const [choice] = result.choices;
 
-    return { content: choice ?? '' };
+    return {
+      content: choice ?? '',
+      debug: {
+        prompt,
+      },
+    };
   }
 }

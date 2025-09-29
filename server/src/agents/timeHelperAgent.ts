@@ -67,6 +67,10 @@ export class TimeHelperAgent implements Agent {
 
     return {
       content: `${intro}\n${lines.join('\n')}`,
+      debug: {
+        matchedCities: cities.map((city) => city.label),
+        rawInput: context.userMessage,
+      },
     };
   }
 }
