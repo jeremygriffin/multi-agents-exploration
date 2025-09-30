@@ -12,6 +12,7 @@
 3. **Backend implementation**
    - Configure environment handling (`.env` for `OPENAI_API_KEY`).
    - Build agent modules: manager orchestrator plus four specialized agents (greeting, summarizer, time helper, input coach).
+   - Offer both Agents SDK and MCP-backed location resolution paths for the time helper, switchable via configuration, and surface the MCP endpoint for inspection.
    - Implement conversation routing logic that invokes micro-agents on demand and enables them to pass control back to the manager.
    - Create REST endpoints for sending messages, retrieving active conversation history, and exposing interaction logs.
    - Implement per-conversation log files capturing prompts, agent invocations, and responses.

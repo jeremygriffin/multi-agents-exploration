@@ -3,6 +3,7 @@ import path from 'path';
 
 import type { Agent, AgentContext, AgentResult } from './baseAgent';
 import { OpenAIAgent } from 'openai-agents';
+import { LocationMcpClient } from '../mcp/locationClient';
 
 interface ToolResultMatch {
   city: string;
@@ -29,7 +30,14 @@ export class TimeHelperAgent implements Agent {
 
   private readonly toolsLoaded: Promise<boolean>;
 
+  private readonly locationProvider: 'agents_sdk' | 'mcp';
+
+  private readonly mcpClient?: LocationMcpClient;
+
   constructor() {
+    const provider = (process.env.TIME_HELPER_LOCATION_PROVIDER ?? 'agents_sdk').toLowerCase();
+    this.locationProvider = provider === 'mcp' ? 'mcp' : 'agents_sdk';
+
     this.agent = new OpenAIAgent({
       model: 'gpt-4o-mini',
       temperature: 0.3,
@@ -39,12 +47,19 @@ If multiple matches exist, ask the user to clarify before giving times. If none 
 Stay in the conversation until the user has an answer or declines to continue.`,
     });
 
-    const toolsDir = path.resolve(__dirname, '../tools');
-    this.toolsLoaded = this.agent.loadToolFuctions(toolsDir).catch((error) => {
-      // eslint-disable-next-line no-console
-      console.error('Failed to load tools for TimeHelperAgent:', error);
-      return false;
-    });
+    if (this.locationProvider === 'agents_sdk') {
+      const toolsDir = path.resolve(__dirname, '../tools');
+      this.toolsLoaded = this.agent.loadToolFuctions(toolsDir).catch((error) => {
+        // eslint-disable-next-line no-console
+        console.error('Failed to load tools for TimeHelperAgent:', error);
+        return false;
+      });
+    } else {
+      this.toolsLoaded = Promise.resolve(true);
+      const mcpUrl = process.env.TIME_HELPER_MCP_URL
+        ?? `http://127.0.0.1:${process.env.PORT ?? 3001}/mcp/location`;
+      this.mcpClient = new LocationMcpClient(mcpUrl);
+    }
   }
 
   private async ensureToolsLoaded(): Promise<void> {
@@ -169,6 +184,10 @@ Stay in the conversation until the user has an answer or declines to continue.`,
   }
 
   async handle(context: AgentContext): Promise<AgentResult> {
+    if (this.locationProvider === 'mcp') {
+      return this.handleViaMcp(context);
+    }
+
     await this.ensureToolsLoaded();
 
     const prompt = this.buildPrompt(context);
@@ -202,6 +221,43 @@ Stay in the conversation until the user has an answer or declines to continue.`,
         prompt,
         toolPayloads,
         rawToolMessages: toolMessages,
+      },
+    };
+  }
+
+  private async handleViaMcp(context: AgentContext): Promise<AgentResult> {
+    const query = context.userMessage;
+    if (!query || !this.mcpClient) {
+      return {
+        content: 'I could not determine the time. Could you share more about the location (city and country)?',
+        debug: {
+          provider: 'mcp',
+          reason: 'missing_query_or_client',
+        },
+      };
+    }
+
+    const payload = await this.mcpClient.resolveLocation(query);
+
+    if (!payload) {
+      return {
+        content: 'I was unable to resolve that location. Could you add more detail like the country or state?',
+        debug: {
+          provider: 'mcp',
+          query,
+          payload,
+        },
+      };
+    }
+
+    const content = this.formatFromMatches(payload.matches ?? []);
+
+    return {
+      content,
+      debug: {
+        provider: 'mcp',
+        query,
+        payload,
       },
     };
   }

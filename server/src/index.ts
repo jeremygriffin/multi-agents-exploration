@@ -7,6 +7,7 @@ import { Orchestrator } from './orchestrator';
 import { createConversationRouter } from './routes/conversationRoutes';
 import { ConversationStore } from './services/conversationStore';
 import { InteractionLogger } from './services/interactionLogger';
+import { createLocationMcpHandler } from './mcp/locationServer';
 
 const requiredEnv = ['OPENAI_API_KEY'];
 const missing = requiredEnv.filter((key) => !process.env[key]);
@@ -19,6 +20,11 @@ if (missing.length > 0) {
 const app = express();
 app.use(cors());
 app.use(express.json());
+
+const locationMcpHandler = createLocationMcpHandler();
+app.all('/mcp/location', (req, res, next) => {
+  locationMcpHandler(req, res).catch(next);
+});
 
 const store = new ConversationStore();
 const logger = new InteractionLogger();

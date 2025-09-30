@@ -6,11 +6,13 @@
   - Greeting agent for welcoming and identifying conversation intent.
   - Summarizing agent to condense conversation snippets on demand.
   - Time helper agent that answers world-time questions for various locales.
+    - Supports both an OpenAI Agents SDK function tool and an MCP-hosted location resolver, selectable via configuration.
   - Input coach agent that analyzes conversation text for grammar/spelling improvements.
 - Include a manager agent that routes user prompts to micro-agents and coordinates hand-offs between them.
 - Trigger micro-agents on demand based on user prompts and agent responses.
 - Maintain per-conversation interaction history accessible through the UI.
 - Persist full interaction logs for each conversation in backend log files for later review.
+- Expose the location resolver as a Streamable HTTP MCP endpoint so its behavior can be inspected independently of the Agents SDK tool flow.
 
 ## Non-Functional Requirements
 - Run entirely on localhost for experimentation and learning.
