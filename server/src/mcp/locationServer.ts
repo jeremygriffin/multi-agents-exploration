@@ -22,9 +22,28 @@ locationServer.tool(
     },
   },
   async (args) => {
-    const rawQuery =
-      (args && 'query' in args ? (args as { query?: unknown }).query : undefined) ??
-      (args && 'arguments' in args ? (args as { arguments?: { query?: unknown } }).arguments?.query : undefined);
+    const rawQuery = (() => {
+      if (typeof args === 'string') {
+        return args;
+      }
+
+      if (Array.isArray(args) && args.length > 0) {
+        return args[0];
+      }
+
+      if (args && typeof args === 'object') {
+        const argObject = args as { query?: unknown; arguments?: { query?: unknown } };
+        if (typeof argObject.query !== 'undefined') {
+          return argObject.query;
+        }
+        if (argObject.arguments && typeof argObject.arguments.query !== 'undefined') {
+          return argObject.arguments.query;
+        }
+      }
+
+      return undefined;
+    })();
+
     const query = typeof rawQuery === 'string' ? rawQuery : rawQuery != null ? String(rawQuery) : '';
 
     const matches = buildLocationMatches(query);
@@ -35,7 +54,12 @@ locationServer.tool(
     };
 
     // eslint-disable-next-line no-console
-    console.debug('[MCP] resolve_location', { rawQuery, query, matchCount: matches.length });
+    console.debug('[MCP] resolve_location', {
+      rawArgs: inspect(args, { depth: null, breakLength: Infinity }),
+      rawQuery,
+      query,
+      matchCount: matches.length,
+    });
 
     return {
       content: [
