@@ -17,7 +17,7 @@ Return JSON matching this schema: {
   ],
   "notes"?: string
 }
-Only include agents that materially advance the conversation. Prefer greeting agent for new sessions or topic changes. When the user asks for time conversions include time_helper. Use summarizer for recap requests. Use input_coach to improve phrasing. If attachments are supplied or the user asks to store a document, include document_store. If no agent is needed return an empty actions array.`,
+Only include agents that materially advance the conversation. Prefer greeting agent for new sessions or topic changes, otherwise continue delegating to the agent that most recently requested follow-up until their task is resolved. When the user asks for time conversions include time_helper. Use summarizer for recap requests. Use input_coach to improve phrasing. If attachments are supplied or the user asks to store a document, include document_store. If no agent is needed return an empty actions array.`,
     });
   }
 
