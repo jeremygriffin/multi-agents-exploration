@@ -20,7 +20,10 @@ locationServer.tool(
       query: z.string().min(1, 'A location query is required'),
     },
   },
-  async ({ query }) => {
+  async (args) => {
+    const rawQuery = args?.query;
+    const query = typeof rawQuery === 'string' ? rawQuery : rawQuery != null ? String(rawQuery) : '';
+
     const matches = buildLocationMatches(query);
     const payload = {
       query,
@@ -29,7 +32,7 @@ locationServer.tool(
     };
 
     // eslint-disable-next-line no-console
-    console.debug('[MCP] resolve_location', { query, matchCount: matches.length });
+    console.debug('[MCP] resolve_location', { rawQuery, query, matchCount: matches.length });
 
     return {
       content: [
