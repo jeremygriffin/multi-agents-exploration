@@ -21,29 +21,9 @@ locationServer.tool(
       query: z.string().min(1, 'A location query is required'),
     },
   },
-  async (args) => {
-    const rawQuery = (() => {
-      if (typeof args === 'string') {
-        return args;
-      }
-
-      if (Array.isArray(args) && args.length > 0) {
-        return args[0];
-      }
-
-      if (args && typeof args === 'object') {
-        const argObject = args as { query?: unknown; arguments?: { query?: unknown } };
-        if (typeof argObject.query !== 'undefined') {
-          return argObject.query;
-        }
-        if (argObject.arguments && typeof argObject.arguments.query !== 'undefined') {
-          return argObject.arguments.query;
-        }
-      }
-
-      return undefined;
-    })();
-
+  async (argsInput, extra) => {
+    const argObject = (argsInput ?? {}) as { query?: unknown };
+    const rawQuery = argObject.query;
     const query = typeof rawQuery === 'string' ? rawQuery : rawQuery != null ? String(rawQuery) : '';
 
     const matches = buildLocationMatches(query);
@@ -55,7 +35,8 @@ locationServer.tool(
 
     // eslint-disable-next-line no-console
     console.debug('[MCP] resolve_location', {
-      rawArgs: inspect(args, { depth: null, breakLength: Infinity }),
+      rawArgs: inspect(argsInput, { depth: null, breakLength: Infinity }),
+      extra: inspect(extra, { depth: 1 }),
       rawQuery,
       query,
       matchCount: matches.length,
