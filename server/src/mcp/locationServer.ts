@@ -28,6 +28,9 @@ locationServer.tool(
       matchCount: matches.length,
     };
 
+    // eslint-disable-next-line no-console
+    console.debug('[MCP] resolve_location', { query, matchCount: matches.length });
+
     return {
       content: [
         {

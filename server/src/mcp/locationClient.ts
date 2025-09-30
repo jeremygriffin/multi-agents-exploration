@@ -62,6 +62,16 @@ export class LocationMcpClient {
       },
     });
 
+    // eslint-disable-next-line no-console
+    console.debug('[MCP] callTool result', {
+      query,
+      isError: result.isError,
+      hasStructured: Boolean(result.structuredContent),
+      contentPreview: Array.isArray(result.content)
+        ? result.content.slice(0, 1)
+        : result.content,
+    });
+
     if (result.isError) {
       return null;
     }
@@ -71,16 +81,17 @@ export class LocationMcpClient {
     }
 
     const contentItems = Array.isArray(result.content) ? result.content : [];
-    const textPayload = contentItems.find(
-      (item): item is { type: 'text'; text: string } =>
-        Boolean(item && typeof item === 'object' && 'type' in item && item.type === 'text' && 'text' in item && typeof (item as { text: unknown }).text === 'string')
-    );
+    const textPayload = contentItems.find((item) => item && typeof item === 'object' && 'type' in item && item.type === 'text');
     if (!textPayload) {
       return null;
     }
 
     try {
-      return JSON.parse(textPayload.text) as LocationMcpPayload;
+      const rawText = extractTextContent(textPayload);
+      if (!rawText) {
+        return null;
+      }
+      return JSON.parse(rawText) as LocationMcpPayload;
     } catch (error) {
       // eslint-disable-next-line no-console
       console.warn('Failed to parse MCP payload', error);
@@ -88,3 +99,31 @@ export class LocationMcpClient {
     }
   }
 }
+
+const extractTextContent = (item: unknown): string | null => {
+  if (!item || typeof item !== 'object' || !('type' in item) || (item as { type: unknown }).type !== 'text') {
+    return null;
+  }
+
+  const textCandidate = (item as { text?: unknown }).text;
+  if (typeof textCandidate === 'string') {
+    return textCandidate;
+  }
+
+  if (Array.isArray(textCandidate)) {
+    return textCandidate
+      .map((part) => {
+        if (typeof part === 'string') {
+          return part;
+        }
+        if (part && typeof part === 'object' && 'text' in part && typeof (part as { text?: unknown }).text === 'string') {
+          return (part as { text: string }).text;
+        }
+        return '';
+      })
+      .join('')
+      .trim();
+  }
+
+  return null;
+};
