@@ -1,10 +1,10 @@
+.idea
+.env
+
 node_modules
 server/dist
 client/dist
-.env
-*.log
 
+*.log
 server/logs
-.idea
 server/storage
-.idea
