@@ -77,27 +77,56 @@ Stay in the conversation until the user has an answer or declines to continue.`,
       .join('\n\n');
   }
 
-  private extractToolResult(message: Record<string, unknown>): ToolResultPayload | null {
+  private parseJsonRecursive(value: string): unknown {
+    let current: unknown = value;
+
     try {
+      let loopGuard = 0;
+      while (typeof current === 'string' && loopGuard < 5) {
+        const trimmed = current.trim();
+        if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) {
+          break;
+        }
+        current = JSON.parse(trimmed);
+        loopGuard += 1;
+      }
+    } catch (error) {
+      return null;
+    }
+
+    return current;
+  }
+
+  private extractToolResult(message: Record<string, unknown>): ToolResultPayload | null {
+    const rawResult = (() => {
       if ('result' in message && typeof message.result === 'string') {
-        return JSON.parse(message.result) as ToolResultPayload;
+        return message.result;
       }
 
       if ('content' in message) {
         const content = message.content;
         if (typeof content === 'string') {
-          return JSON.parse(content) as ToolResultPayload;
+          return content;
         }
 
         if (Array.isArray(content)) {
           const textPart = content.find((part) => typeof part?.text === 'string');
           if (textPart && typeof textPart.text === 'string') {
-            return JSON.parse(textPart.text) as ToolResultPayload;
+            return textPart.text;
           }
         }
       }
-    } catch (error) {
+
       return null;
+    })();
+
+    if (!rawResult) {
+      return null;
+    }
+
+    const parsed = this.parseJsonRecursive(rawResult);
+    if (parsed && typeof parsed === 'object' && 'matchCount' in parsed) {
+      return parsed as ToolResultPayload;
     }
 
     return null;
