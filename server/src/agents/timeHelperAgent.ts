@@ -51,11 +51,12 @@ Stay in the conversation until the user has an answer or declines to continue.`,
     await this.toolsLoaded;
   }
 
-  private formatTime(zone: string): { time: string; offset: string } {
+  private formatTime(zone: string): { time: string; offset: string; isValid: boolean } {
     const now = DateTime.now().setZone(zone);
     return {
       time: now.toFormat('cccc, dd LLL yyyy HH:mm'),
       offset: now.toFormat('ZZZZ'),
+      isValid: now.isValid,
     };
   }
 
@@ -76,16 +77,53 @@ Stay in the conversation until the user has an answer or declines to continue.`,
       .join('\n\n');
   }
 
-  private extractToolResult(result: unknown): ToolResultPayload | null {
-    if (!result || typeof result !== 'object') {
-      return null;
-    }
-
+  private extractToolResult(message: Record<string, unknown>): ToolResultPayload | null {
     try {
-      return JSON.parse((result as { result: string }).result ?? '{}') as ToolResultPayload;
+      if ('result' in message && typeof message.result === 'string') {
+        return JSON.parse(message.result) as ToolResultPayload;
+      }
+
+      if ('content' in message) {
+        const content = message.content;
+        if (typeof content === 'string') {
+          return JSON.parse(content) as ToolResultPayload;
+        }
+
+        if (Array.isArray(content)) {
+          const textPart = content.find((part) => typeof part?.text === 'string');
+          if (textPart && typeof textPart.text === 'string') {
+            return JSON.parse(textPart.text) as ToolResultPayload;
+          }
+        }
+      }
     } catch (error) {
       return null;
     }
+
+    return null;
+  }
+
+  private formatFromMatches(matches: ToolResultMatch[]): string {
+    if (matches.length === 0) {
+      return 'I could not map that location to a timezone. Could you share a nearby major city or the country as well?';
+    }
+
+    if (matches.length === 1) {
+      const match = matches[0]!;
+      const zoneTime = this.formatTime(match.timezone);
+      if (!zoneTime.isValid) {
+        return `I found ${match.city}${match.province ? `, ${match.province}` : ''} in ${match.country}, but the timezone looked invalid. Could you double-check the location?`;
+      }
+
+      return `Here is the current local time for ${match.city}${match.province ? `, ${match.province}` : ''} (${match.country}) in ${match.timezone}: ${zoneTime.time} (${zoneTime.offset}).`;
+    }
+
+    const topMatches = matches.slice(0, 5);
+    const options = topMatches
+      .map((match) => `${match.city}${match.province ? `, ${match.province}` : ''} (${match.country}) → ${match.timezone}`)
+      .join('\n');
+
+    return `I found multiple matches for that location. Could you clarify which one you need?\n${options}`;
   }
 
   async handle(context: AgentContext): Promise<AgentResult> {
@@ -98,19 +136,29 @@ Stay in the conversation until the user has an answer or declines to continue.`,
     });
 
     const choice = completion.choices[0] ?? '';
-    const toolMessages = completion.completion_messages?.filter(
+    const toolMessages = (completion.completion_messages ?? []).filter(
       (msg) => msg.role === 'tool'
-    ) ?? [];
+    );
 
     const toolPayloads = toolMessages
-      .map((msg) => this.extractToolResult(msg))
+      .map((msg) => this.extractToolResult(msg as unknown as Record<string, unknown>))
       .filter((payload): payload is ToolResultPayload => payload !== null);
 
+    let content = choice;
+
+    if (toolPayloads.length > 0) {
+      const latest = toolPayloads[toolPayloads.length - 1]!;
+      content = this.formatFromMatches(latest.matches ?? []);
+    } else if (!choice) {
+      content = 'I could not determine the time. Could you share more about the location (city and country)?';
+    }
+
     return {
-      content: choice,
+      content,
       debug: {
         prompt,
         toolPayloads,
+        rawToolMessages: toolMessages,
       },
     };
   }

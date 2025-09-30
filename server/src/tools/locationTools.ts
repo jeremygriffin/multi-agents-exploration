@@ -1,7 +1,17 @@
-import cityTimezones from 'city-timezones';
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const cityTimezones = require('city-timezones') as {
+  findFromCityStateProvince: (query: string) => CityTimezoneRecord[];
+  lookupViaCity: (query: string) => CityTimezoneRecord[];
+};
 
-interface ResolveLocationArgs {
-  query: string;
+interface CityTimezoneRecord {
+  city: string;
+  city_ascii?: string;
+  province?: string;
+  country: string;
+  iso2?: string;
+  iso3?: string;
+  timezone: string;
 }
 
 interface LocationMatch {
@@ -22,32 +32,50 @@ const buildMatches = (query: string): LocationMatch[] => {
     return [];
   }
 
-  const direct = cityTimezones.findFromCityStateProvince(normalized);
-  const cityLookup = cityTimezones.lookupViaCity(normalized);
+  const direct = cityTimezones.findFromCityStateProvince(normalized) ?? [];
+  const cityLookup = cityTimezones.lookupViaCity(normalized) ?? [];
 
   const seen = new Map<string, LocationMatch>();
 
-  for (const match of [...(direct ?? []), ...(cityLookup ?? [])]) {
+  for (const match of [...direct, ...cityLookup]) {
     const key = `${match.city}|${match.province}|${match.country}|${match.timezone}`;
     if (seen.has(key)) {
       continue;
     }
 
-    seen.set(key, {
+    const cityAscii = match.city_ascii ?? match.city;
+
+    const entry: LocationMatch = {
       city: match.city,
-      province: match.province,
       country: match.country,
-      iso2: match.iso2,
-      iso3: match.iso3,
       timezone: match.timezone,
-      confidence: match.city_ascii?.toLowerCase() === normalized.toLowerCase() ? 0.9 : 0.6,
-    });
+      confidence:
+        cityAscii.toLowerCase() === normalized.toLowerCase() ? 0.9 : 0.6,
+    };
+
+    if (match.province) {
+      entry.province = match.province;
+    }
+
+    if (match.iso2) {
+      entry.iso2 = match.iso2;
+    }
+
+    if (match.iso3) {
+      entry.iso3 = match.iso3;
+    }
+
+    seen.set(key, entry);
   }
 
-  return [...seen.values()].sort((a, b) => b.confidence - a.confidence);
+  return Array.from(seen.values()).sort((a, b) => b.confidence - a.confidence);
 };
 
-export const resolve_location_definition = {
+interface ResolveLocationArgs {
+  query: string;
+}
+
+const resolve_location_definition = {
   type: 'function',
   function: {
     name: 'resolve_location',
@@ -65,7 +93,7 @@ export const resolve_location_definition = {
   },
 };
 
-export const resolve_location = async ({ query }: ResolveLocationArgs): Promise<string> => {
+const resolve_location = async ({ query }: ResolveLocationArgs): Promise<string> => {
   const matches = buildMatches(query);
 
   return JSON.stringify({
@@ -73,4 +101,9 @@ export const resolve_location = async ({ query }: ResolveLocationArgs): Promise<
     matches,
     matchCount: matches.length,
   });
+};
+
+module.exports = {
+  resolve_location_definition,
+  resolve_location,
 };
