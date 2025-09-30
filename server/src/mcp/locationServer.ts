@@ -70,7 +70,7 @@ export const createLocationMcpHandler = () => {
         'mcp-session-id': req.headers['mcp-session-id'],
         'content-type': req.headers['content-type'],
       },
-      body: req.body,
+      body: typeof req.body === 'object' ? JSON.parse(JSON.stringify(req.body)) : req.body,
     });
     await transport.handleRequest(req, res, req.body);
   };
