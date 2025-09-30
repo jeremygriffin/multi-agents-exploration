@@ -80,18 +80,31 @@ Stay in the conversation until the user has an answer or declines to continue.`,
   private parseJsonRecursive(value: string): unknown {
     let current: unknown = value;
 
-    try {
-      let loopGuard = 0;
-      while (typeof current === 'string' && loopGuard < 5) {
-        const trimmed = current.trim();
-        if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) {
-          break;
-        }
-        current = JSON.parse(trimmed);
-        loopGuard += 1;
+    let loopGuard = 0;
+    while (loopGuard < 6) {
+      if (typeof current !== 'string') {
+        break;
       }
-    } catch (error) {
-      return null;
+
+      const trimmed = current.trim();
+      if (trimmed.length === 0) {
+        return null;
+      }
+
+      const wrappedInQuotes = trimmed.startsWith('"') && trimmed.endsWith('"');
+      const looksJson = trimmed.startsWith('{') || trimmed.startsWith('[');
+
+      try {
+        if (looksJson || wrappedInQuotes) {
+          current = JSON.parse(trimmed);
+          loopGuard += 1;
+          continue;
+        }
+      } catch (error) {
+        return null;
+      }
+
+      break;
     }
 
     return current;
