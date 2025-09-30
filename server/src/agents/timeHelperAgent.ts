@@ -28,6 +28,8 @@ export class TimeHelperAgent implements Agent {
 
   private readonly agent: OpenAIAgent;
 
+  private readonly locationExtractor: OpenAIAgent;
+
   private readonly toolsLoaded: Promise<boolean>;
 
   private readonly locationProvider: 'agents_sdk' | 'mcp';
@@ -45,6 +47,13 @@ export class TimeHelperAgent implements Agent {
 Use the resolve_location tool to map user text to IANA time zones whenever the location is unclear or unfamiliar.
 If multiple matches exist, ask the user to clarify before giving times. If none are found, explain what extra info you need.
 Stay in the conversation until the user has an answer or declines to continue.`,
+    });
+
+    this.locationExtractor = new OpenAIAgent({
+      model: 'gpt-4o-mini',
+      temperature: 0,
+      system_instruction:
+        'Extract the location the user wants a time for. Respond with only the location string (e.g., "Seattle, Washington, United States"). If unsure, reply with UNKNOWN.',
     });
 
     if (this.locationProvider === 'agents_sdk') {
@@ -226,8 +235,8 @@ Stay in the conversation until the user has an answer or declines to continue.`,
   }
 
   private async handleViaMcp(context: AgentContext): Promise<AgentResult> {
-    const query = context.userMessage;
-    if (!query || !this.mcpClient) {
+    const rawUserInput = this.stripManagerInstructions(context.userMessage);
+    if (!rawUserInput || !this.mcpClient) {
       return {
         content: 'I could not determine the time. Could you share more about the location (city and country)?',
         debug: {
@@ -237,14 +246,27 @@ Stay in the conversation until the user has an answer or declines to continue.`,
       };
     }
 
-    const payload = await this.mcpClient.resolveLocation(query);
+    const extractedQuery = await this.deriveLocationQuery(context, rawUserInput);
+    if (!extractedQuery) {
+      return {
+        content: 'I could not determine the time. Could you share more about the location (city and country)?',
+        debug: {
+          provider: 'mcp',
+          rawUserInput,
+          reason: 'unable_to_extract_location',
+        },
+      };
+    }
+
+    const payload = await this.mcpClient.resolveLocation(extractedQuery);
 
     if (!payload) {
       return {
         content: 'I was unable to resolve that location. Could you add more detail like the country or state?',
         debug: {
           provider: 'mcp',
-          query,
+          rawUserInput,
+          extractedQuery,
           payload,
         },
       };
@@ -256,9 +278,55 @@ Stay in the conversation until the user has an answer or declines to continue.`,
       content,
       debug: {
         provider: 'mcp',
-        query,
+        rawUserInput,
+        extractedQuery,
         payload,
       },
     };
+  }
+
+  private stripManagerInstructions(message: string): string {
+    if (!message) {
+      return '';
+    }
+
+    const [userPortion] = message.split('Manager instructions:');
+    return (userPortion ?? message).trim();
+  }
+
+  private async deriveLocationQuery(context: AgentContext, userInput: string): Promise<string | null> {
+    const transcript = context.conversation.messages
+      .slice(-4)
+      .map((msg) => `${msg.role === 'user' ? 'User' : `Agent(${msg.agent ?? 'assistant'})`}: ${msg.content}`)
+      .join('\n');
+
+    const prompt = [
+      'Identify the location the user wants the current time for and respond with only that location.',
+      'Return a succinct string such as "Seattle, Washington" or "Tokyo, Japan". Use just the information provided; do not invent details.',
+      'If you are unsure about the location, respond with UNKNOWN.',
+      transcript ? `Recent conversation:\n${transcript}` : null,
+      `User input: ${userInput}`,
+    ]
+      .filter(Boolean)
+      .join('\n\n');
+
+    const completion = await this.locationExtractor.createChatCompletion(prompt, {
+      custom_params: {
+        temperature: 0,
+        max_tokens: 32,
+      },
+    });
+
+    const answer = completion.choices[0]?.trim();
+    if (!answer) {
+      return null;
+    }
+
+    const firstLine = answer.split('\n')[0]?.trim();
+    if (!firstLine || firstLine.toUpperCase() === 'UNKNOWN') {
+      return null;
+    }
+
+    return firstLine.replace(/^Location:\s*/i, '').trim();
   }
 }
