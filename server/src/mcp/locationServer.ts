@@ -1,6 +1,7 @@
 import type { Request, Response } from 'express';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import { inspect } from 'util';
 import { z } from 'zod';
 
 import { buildLocationMatches } from '../location/locationMatcher';
@@ -70,7 +71,10 @@ export const createLocationMcpHandler = () => {
         'mcp-session-id': req.headers['mcp-session-id'],
         'content-type': req.headers['content-type'],
       },
-      body: typeof req.body === 'object' ? JSON.parse(JSON.stringify(req.body)) : req.body,
+      body:
+        typeof req.body === 'object'
+          ? inspect(req.body, { depth: null, breakLength: Infinity })
+          : req.body,
     });
     await transport.handleRequest(req, res, req.body);
   };
