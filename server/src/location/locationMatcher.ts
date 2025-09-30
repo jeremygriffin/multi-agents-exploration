@@ -26,9 +26,19 @@ export interface LocationMatchInternal {
   confidence: number;
 }
 
-const normalizeQuery = (query: string): string => query.trim();
+const normalizeQuery = (query: unknown): string => {
+  if (typeof query === 'string') {
+    return query.trim();
+  }
 
-export const buildLocationMatches = (query: string): LocationMatchInternal[] => {
+  if (query === undefined || query === null) {
+    return '';
+  }
+
+  return String(query).trim();
+};
+
+export const buildLocationMatches = (query: unknown): LocationMatchInternal[] => {
   const normalized = normalizeQuery(query);
   if (!normalized) {
     return [];

@@ -1,5 +1,5 @@
 const { buildLocationMatches } = require('../location/locationMatcher') as {
-  buildLocationMatches: (query: string) => {
+  buildLocationMatches: (query: unknown) => {
     city: string;
     province?: string;
     country: string;

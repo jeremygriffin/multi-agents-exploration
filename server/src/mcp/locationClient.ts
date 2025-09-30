@@ -66,21 +66,22 @@ export class LocationMcpClient {
     console.debug('[MCP] callTool result', {
       query,
       isError: result.isError,
-      hasStructured: Boolean(result.structuredContent),
-      contentPreview: Array.isArray(result.content)
-        ? result.content.slice(0, 1)
-        : result.content,
+      hasStructured: Boolean((result as { structuredContent?: unknown }).structuredContent),
+      rawResult: result,
     });
 
     if (result.isError) {
       return null;
     }
 
-    if (result.structuredContent && typeof result.structuredContent === 'object') {
-      return result.structuredContent as LocationMcpPayload;
+    const structured = (result as { structuredContent?: unknown }).structuredContent;
+    if (structured && typeof structured === 'object') {
+      return structured as LocationMcpPayload;
     }
 
-    const contentItems = Array.isArray(result.content) ? result.content : [];
+    const contentItems = Array.isArray((result as { content?: unknown }).content)
+      ? ((result as { content?: unknown[] }).content ?? [])
+      : [];
     const textPayload = contentItems.find((item) => item && typeof item === 'object' && 'type' in item && item.type === 'text');
     if (!textPayload) {
       return null;
