@@ -60,6 +60,16 @@ const connectionReady = locationServer.connect(transport).catch((error) => {
 export const createLocationMcpHandler = () => {
   return async (req: Request, res: Response): Promise<void> => {
     await connectionReady;
+    // eslint-disable-next-line no-console
+    console.debug('[MCP] incoming request', {
+      method: req.method,
+      query: req.query,
+      headers: {
+        'mcp-session-id': req.headers['mcp-session-id'],
+        'content-type': req.headers['content-type'],
+      },
+      body: req.body,
+    });
     await transport.handleRequest(req, res, req.body);
   };
 };
