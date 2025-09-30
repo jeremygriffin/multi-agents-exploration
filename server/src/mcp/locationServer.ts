@@ -11,7 +11,7 @@ const locationServer = new McpServer({
   version: '0.1.0',
 });
 
-locationServer.tool(
+locationServer.registerTool(
   'resolve_location',
   {
     title: 'Resolve a location string to candidate time zones',
