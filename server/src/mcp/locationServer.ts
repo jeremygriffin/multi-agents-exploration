@@ -21,7 +21,9 @@ locationServer.tool(
     },
   },
   async (args) => {
-    const rawQuery = args?.query;
+    const rawQuery =
+      (args && 'query' in args ? (args as { query?: unknown }).query : undefined) ??
+      (args && 'arguments' in args ? (args as { arguments?: { query?: unknown } }).arguments?.query : undefined);
     const query = typeof rawQuery === 'string' ? rawQuery : rawQuery != null ? String(rawQuery) : '';
 
     const matches = buildLocationMatches(query);
