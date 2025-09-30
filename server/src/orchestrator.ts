@@ -11,26 +11,25 @@ import type { Agent } from './agents/baseAgent';
 import type { ConversationStore } from './services/conversationStore';
 import type { InteractionLogger } from './services/interactionLogger';
 
-const manager = new ManagerAgent();
-const greetingAgent = new GreetingAgent();
-const summarizerAgent = new SummarizerAgent();
-const timeHelperAgent = new TimeHelperAgent();
-const inputCoachAgent = new InputCoachAgent();
-const documentStoreAgent = new DocumentStoreAgent();
-
-const agentRegistry: Record<string, Agent> = {
-  greeting: greetingAgent,
-  summarizer: summarizerAgent,
-  time_helper: timeHelperAgent,
-  input_coach: inputCoachAgent,
-  document_store: documentStoreAgent,
-};
-
 export class Orchestrator {
+  private readonly manager: ManagerAgent;
+
+  private readonly agentRegistry: Record<string, Agent>;
+
   constructor(
     private readonly store: ConversationStore,
     private readonly logger: InteractionLogger
-  ) {}
+  ) {
+    this.manager = new ManagerAgent();
+
+    this.agentRegistry = {
+      greeting: new GreetingAgent(),
+      summarizer: new SummarizerAgent(),
+      time_helper: new TimeHelperAgent(this.logger),
+      input_coach: new InputCoachAgent(),
+      document_store: new DocumentStoreAgent(),
+    };
+  }
 
   createConversation(): Conversation {
     const conversation = this.store.createConversation();
@@ -82,7 +81,7 @@ export class Orchestrator {
           .join(', ')}`
       : message;
 
-    const plan = await manager.plan(conversation, managerInput);
+    const plan = await this.manager.plan(conversation, managerInput);
 
     await this.logger.append({
       timestamp: new Date().toISOString(),
@@ -98,7 +97,7 @@ export class Orchestrator {
     const responses: AgentResponse[] = [];
 
     for (const action of actions) {
-      const agent = agentRegistry[action.agent];
+      const agent = this.agentRegistry[action.agent];
       if (!agent) {
         continue;
       }

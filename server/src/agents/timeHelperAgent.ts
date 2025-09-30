@@ -3,7 +3,8 @@ import path from 'path';
 
 import type { Agent, AgentContext, AgentResult } from './baseAgent';
 import { OpenAIAgent } from 'openai-agents';
-import { LocationMcpClient } from '../mcp/locationClient';
+import { LocationMcpClient, type LocationMcpPayload } from '../mcp/locationClient';
+import type { InteractionLogger } from '../services/interactionLogger';
 
 interface ToolResultMatch {
   city: string;
@@ -36,9 +37,13 @@ export class TimeHelperAgent implements Agent {
 
   private readonly mcpClient?: LocationMcpClient;
 
-  constructor() {
+  private readonly logger: InteractionLogger | undefined;
+
+  constructor(logger?: InteractionLogger) {
     const provider = (process.env.TIME_HELPER_LOCATION_PROVIDER ?? 'agents_sdk').toLowerCase();
     this.locationProvider = provider === 'mcp' ? 'mcp' : 'agents_sdk';
+
+    this.logger = logger;
 
     this.agent = new OpenAIAgent({
       model: 'gpt-4o-mini',
@@ -248,6 +253,10 @@ Stay in the conversation until the user has an answer or declines to continue.`,
 
     const extractedQuery = await this.deriveLocationQuery(context, rawUserInput);
     if (!extractedQuery) {
+      this.logMcpEvent(context, 'error', {
+        rawUserInput,
+        reason: 'unable_to_extract_location',
+      });
       return {
         content: 'I could not determine the time. Could you share more about the location (city and country)?',
         debug: {
@@ -258,7 +267,34 @@ Stay in the conversation until the user has an answer or declines to continue.`,
       };
     }
 
-    const payload = await this.mcpClient.resolveLocation(extractedQuery);
+    this.logMcpEvent(context, 'request', {
+      rawUserInput,
+      extractedQuery,
+    });
+
+    let payload: LocationMcpPayload | null = null;
+    let errorMessage: string | undefined;
+
+    try {
+      payload = await this.mcpClient.resolveLocation(extractedQuery);
+    } catch (error) {
+      errorMessage = error instanceof Error ? error.message : String(error);
+    }
+
+    if (!payload && errorMessage) {
+      this.logMcpEvent(context, 'error', {
+        rawUserInput,
+        extractedQuery,
+        error: errorMessage,
+      });
+    } else {
+      this.logMcpEvent(context, 'response', {
+        rawUserInput,
+        extractedQuery,
+        matchCount: payload?.matchCount ?? 0,
+        matches: payload?.matches ?? [],
+      });
+    }
 
     if (!payload) {
       return {
@@ -268,6 +304,7 @@ Stay in the conversation until the user has an answer or declines to continue.`,
           rawUserInput,
           extractedQuery,
           payload,
+          errorMessage,
         },
       };
     }
@@ -283,6 +320,27 @@ Stay in the conversation until the user has an answer or declines to continue.`,
         payload,
       },
     };
+  }
+
+  private logMcpEvent(
+    context: AgentContext,
+    stage: 'request' | 'response' | 'error',
+    details: Record<string, unknown>
+  ): void {
+    if (!this.logger) {
+      return;
+    }
+
+    void this.logger.append({
+      timestamp: new Date().toISOString(),
+      event: 'mcp_tool',
+      conversationId: context.conversation.id,
+      agent: this.id,
+      payload: {
+        stage,
+        ...details,
+      },
+    });
   }
 
   private stripManagerInstructions(message: string): string {

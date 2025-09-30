@@ -50,7 +50,7 @@ export interface UploadedFile {
 
 export interface ConversationLogEntry {
   timestamp: string;
-  event: 'user_message' | 'manager_plan' | 'agent_response';
+  event: 'user_message' | 'manager_plan' | 'agent_response' | 'mcp_tool';
   conversationId: string;
   agent?: AgentId;
   payload: unknown;
