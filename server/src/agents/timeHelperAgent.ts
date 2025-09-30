@@ -144,10 +144,11 @@ Stay in the conversation until the user has an answer or declines to continue.`,
       .map((msg) => this.extractToolResult(msg as unknown as Record<string, unknown>))
       .filter((payload): payload is ToolResultPayload => payload !== null);
 
+    const latest = toolPayloads[toolPayloads.length - 1] ?? null;
+
     let content = choice;
 
-    if (toolPayloads.length > 0) {
-      const latest = toolPayloads[toolPayloads.length - 1]!;
+    if (latest) {
       content = this.formatFromMatches(latest.matches ?? []);
     } else if (!choice) {
       content = 'I could not determine the time. Could you share more about the location (city and country)?';
