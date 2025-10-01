@@ -9,6 +9,11 @@ export interface AgentContext {
 export interface AgentResult {
   content: string;
   debug?: Record<string, unknown>;
+  audio?: {
+    mimeType: string;
+    base64Data: string;
+    description?: string;
+  };
 }
 
 export interface Agent {

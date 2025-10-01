@@ -4,7 +4,8 @@ export type AgentId =
   | 'summarizer'
   | 'time_helper'
   | 'input_coach'
-  | 'document_store';
+  | 'document_store'
+  | 'voice';
 
 export interface ChatMessage {
   id: string;
@@ -30,9 +31,16 @@ export interface ManagerPlan {
   notes?: string;
 }
 
+export interface AgentAudioResponse {
+  mimeType: string;
+  base64Data: string;
+  description?: string;
+}
+
 export interface AgentResponse {
   agent: Exclude<AgentId, 'manager'>;
   content: string;
+  audio?: AgentAudioResponse;
 }
 
 export interface HandleMessageResult {

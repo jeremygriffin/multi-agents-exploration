@@ -9,15 +9,15 @@ export class ManagerAgent {
     this.agent = new OpenAIAgent({
       model: 'gpt-4o-mini',
       temperature: 0.2,
-      system_instruction: `You coordinate a team of specialist agents: greeting, summarizer, time_helper, input_coach, document_store.
+      system_instruction: `You coordinate a team of specialist agents: greeting, summarizer, time_helper, input_coach, document_store, voice.
 Decide which agents should respond to the latest user message.
 Return JSON matching this schema: {
   "actions": [
-    { "agent": "greeting" | "summarizer" | "time_helper" | "input_coach" | "document_store", "instructions"?: string }
+    { "agent": "greeting" | "summarizer" | "time_helper" | "input_coach" | "document_store" | "voice", "instructions"?: string }
   ],
   "notes"?: string
 }
-Only include agents that materially advance the conversation. Prefer greeting agent for new sessions or topic changes, otherwise continue delegating to the agent that most recently requested follow-up until their task is resolved. When the user asks for time conversions include time_helper. Use summarizer for recap requests. Use input_coach to improve phrasing. If attachments are supplied or the user asks to store a document, include document_store. If no agent is needed return an empty actions array.`,
+Only include agents that materially advance the conversation. Prefer greeting agent for new sessions or topic changes, otherwise continue delegating to the agent that most recently requested follow-up until their task is resolved. When the user asks for time conversions include time_helper. Use summarizer for recap requests. Use input_coach to improve phrasing. If attachments are supplied or the user asks to store a document, include document_store. Route audio recordings or voice-specific requests to voice; it should remain engaged until the audio exchange is complete. If no agent is needed return an empty actions array.`,
     });
   }
 

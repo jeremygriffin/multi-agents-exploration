@@ -6,6 +6,7 @@ import { InputCoachAgent } from './agents/inputCoachAgent';
 import { ManagerAgent } from './agents/managerAgent';
 import { SummarizerAgent } from './agents/summarizerAgent';
 import { TimeHelperAgent } from './agents/timeHelperAgent';
+import { VoiceAgent } from './agents/voiceAgent';
 import type { AgentResponse, Conversation, HandleMessageResult, UploadedFile } from './types';
 import type { Agent } from './agents/baseAgent';
 import type { ConversationStore } from './services/conversationStore';
@@ -28,6 +29,7 @@ export class Orchestrator {
       time_helper: new TimeHelperAgent(this.logger),
       input_coach: new InputCoachAgent(),
       document_store: new DocumentStoreAgent(),
+      voice: new VoiceAgent(),
     };
   }
 
@@ -91,9 +93,15 @@ export class Orchestrator {
       payload: plan,
     });
 
+    const hasAudioAttachment = options?.attachments?.some((file) => file.mimetype?.toLowerCase().startsWith('audio/')) ?? false;
+
     const actions = plan.actions.length > 0
       ? plan.actions
-      : [{ agent: options?.attachments?.length ? ('document_store' as const) : ('greeting' as const) }];
+      : [{
+          agent: options?.attachments?.length
+            ? (hasAudioAttachment ? ('voice' as const) : ('document_store' as const))
+            : ('greeting' as const),
+        }];
     const responses: AgentResponse[] = [];
 
     for (const action of actions) {
@@ -131,25 +139,43 @@ export class Orchestrator {
       conversation.messages = [...conversation.messages, assistantMessage];
       this.store.upsertConversation(conversation);
 
-      responses.push({ agent: action.agent, content: agentResult.content });
+      const responsePayload: AgentResponse = {
+        agent: action.agent,
+        content: agentResult.content,
+      };
+
+      if (agentResult.audio) {
+        responsePayload.audio = agentResult.audio;
+      }
+
+      responses.push(responsePayload);
+
+      const logPayload: Record<string, unknown> = {
+        delegatedMessage,
+        managerInstructions: action.instructions,
+        conversationSummary,
+        attachments: options?.attachments?.map((file) => ({
+          originalName: file.originalName,
+          mimetype: file.mimetype,
+          size: file.size,
+        })),
+        content: agentResult.content,
+        debug: agentResult.debug,
+      };
+
+      if (agentResult.audio) {
+        logPayload.audio = {
+          mimeType: agentResult.audio.mimeType,
+          hasAudio: true,
+        };
+      }
 
       await this.logger.append({
         timestamp: new Date(assistantMessage.timestamp).toISOString(),
         event: 'agent_response',
         conversationId,
         agent: action.agent,
-        payload: {
-          delegatedMessage,
-          managerInstructions: action.instructions,
-          conversationSummary,
-          attachments: options?.attachments?.map((file) => ({
-            originalName: file.originalName,
-            mimetype: file.mimetype,
-            size: file.size,
-          })),
-          content: agentResult.content,
-          debug: agentResult.debug,
-        },
+        payload: logPayload,
       });
     }
 
