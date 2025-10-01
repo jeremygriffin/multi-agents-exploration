@@ -25,7 +25,7 @@
 ### 2. Voice Agent
 - Define `VoiceAgent` using the Agents SDK with tools to:
   - Accept audio attachments from the manager (validated and stored via `audioService`).
-  - Call OpenAI speech-to-text for transcription and text-to-speech for responses (mock or stub calls if API integration is deferred).
+  - Call OpenAI speech-to-text for transcription and text-to-speech for responses (now implemented with real OpenAI APIs, returning synthesized audio to the UI).
 - Ensure the agent logs its tool inputs/outputs to the existing interaction log files for traceability.
 - Update the manager agent routing rules so it detects audio inputs and delegates to `VoiceAgent`; allow `VoiceAgent` to hand control back when appropriate.
 
@@ -35,7 +35,7 @@
 - Update the attachment handling code path to recognize audio files and flag them for `VoiceAgent` routing.
 
 ### 4. Configuration & Environment
-- Document new environment variables (e.g., maximum audio duration, speech model names) in `README.md` and `.env.example` as needed.
+- Document new environment variables (e.g., maximum audio duration, speech model names) in `README.md` and `.env.example` as needed. (Current defaults: `OPENAI_SPEECH_MODEL`, `OPENAI_SPEECH_VOICE`, `OPENAI_SPEECH_FORMAT`.)
 - Provide developer setup instructions for enabling microphone permissions and testing audio playback locally.
 
 ### 5. Logging & Observability

@@ -9,6 +9,7 @@ import {
   validateAudioMimeType,
 } from '../services/audioService';
 import { transcribeAudio, type TranscriptionError } from '../services/speechService';
+import { synthesizeSpeech, SpeechSynthesisError } from '../services/speechSynthesisService';
 import { ensureStorageDir } from '../utils/fileUtils';
 
 const isAudioAttachment = (mimetype: string | undefined): boolean =>
@@ -93,15 +94,18 @@ export class VoiceAgent implements Agent {
       await writeFile(transcriptPath, transcriptContent, 'utf8');
     }
 
-    const base64Audio = transcoded.buffer.toString('base64');
-    const audioPayload: NonNullable<AgentResult['audio']> = {
+    const base64OriginalAudio = transcoded.buffer.toString('base64');
+    const originalAudioPayload: NonNullable<AgentResult['audio']> = {
       mimeType: transcoded.mimeType,
-      base64Data: base64Audio,
+      base64Data: base64OriginalAudio,
     };
-
     if (transcoded.note) {
-      audioPayload.description = transcoded.note;
+      originalAudioPayload.description = transcoded.note;
     }
+
+    let responseAudioPayload: NonNullable<AgentResult['audio']> = originalAudioPayload;
+    let synthesisMetadata: Record<string, unknown> | undefined;
+    let synthesisError: string | undefined;
 
     if (!transcriptText) {
       const fallbackMessage = rateLimitHit
@@ -110,7 +114,7 @@ export class VoiceAgent implements Agent {
 
       return {
         content: fallbackMessage,
-        audio: audioPayload,
+        audio: responseAudioPayload,
         debug: {
           storedAudio: persisted.storedPath,
           transcriptPath,
@@ -122,13 +126,40 @@ export class VoiceAgent implements Agent {
           transcriptionError,
           transcriptionMetadata,
           rateLimitHit,
+          synthesisError,
         },
       };
     }
 
+    try {
+      const speech = await synthesizeSpeech(transcriptText);
+      const speechPersisted = await persistAudioBuffer(speech.buffer, `voice-response.${speech.extension}`);
+      const base64Speech = speech.buffer.toString('base64');
+
+      responseAudioPayload = {
+        mimeType: speech.mimeType,
+        base64Data: base64Speech,
+      };
+
+      responseAudioPayload.description = `Synthesized voice (${speech.extension})`;
+
+      synthesisMetadata = {
+        storedSpeechPath: speechPersisted.storedPath,
+        mimeType: speech.mimeType,
+        extension: speech.extension,
+      };
+    } catch (error) {
+      synthesisError = error instanceof SpeechSynthesisError ? error.message : 'Speech synthesis unavailable.';
+      synthesisMetadata = {
+        cause: error instanceof SpeechSynthesisError ? error.cause : error,
+        fallbackAudio: 'original',
+      };
+      responseAudioPayload = originalAudioPayload;
+    }
+
     return {
       content: `Transcribed your audio clip (${attachment.originalName}): ${transcriptText}`,
-      audio: audioPayload,
+      audio: responseAudioPayload,
       debug: {
         storedAudio: persisted.storedPath,
         transcriptPath,
@@ -139,6 +170,8 @@ export class VoiceAgent implements Agent {
         },
         transcriptionLength: transcriptText.length,
         transcriptionMetadata,
+        synthesisMetadata,
+        synthesisError,
       },
       handoffUserMessage: transcriptText,
     };

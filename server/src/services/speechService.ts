@@ -17,7 +17,7 @@ const RETRYABLE_NODE_ERRORS = new Set(['ECONNRESET', 'ETIMEDOUT', 'ECONNREFUSED'
 
 let client: OpenAI | null = null;
 
-const getClient = (): OpenAI => {
+export const getOpenAIClient = (): OpenAI => {
   if (client) {
     return client;
   }
@@ -34,7 +34,7 @@ export const transcribeAudio = async (
   filename: string,
   mimeType: string
 ): Promise<TranscriptionResult> => {
-  const apiClient = getClient();
+  const apiClient = getOpenAIClient();
 
   const file = await toFile(buffer, filename, { type: mimeType });
 

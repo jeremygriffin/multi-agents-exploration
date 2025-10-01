@@ -8,7 +8,7 @@ Local playground demonstrating the [OpenAI Agents SDK](https://github.com/openai
 - Time helper with selectable location resolver: built-in Agents SDK tool or MCP endpoint mounted locally
 - Express backend with per-conversation log files under `server/logs/`
 - Document storage workflow that saves uploads to `server/storage/` with auto-generated analysis notes
-- React/Vite chat client showing agent attribution, manager notes, and inline audio playback for voice responses
+- React/Vite chat client showing agent attribution, manager notes, and inline audio playback for captured and synthesized voice responses
 - TypeScript across backend and frontend with Vitest coverage for shared helpers
 
 ## Prerequisites
@@ -57,8 +57,12 @@ The MCP resolver is exposed locally at `/mcp/location` via the Streamable HTTP t
 ## Voice interactions
 - Start a recording from the client UI or upload a prerecorded audio file (supported types include MP3, WAV, WebM/Opus, AAC, FLAC, and MP4 audio).
 - Recordings are stored under `server/storage/` with timestamped filenames alongside a Markdown transcript placeholder (`*.transcript.md`) ready for a speech-to-text integration.
-- Agent replies include the original audio as a base64 data URI so you can listen in the chat log while work continues on synthesised responses.
+- Agent replies include the original audio as a base64 data URI when transcription fails, or a synthesized text-to-speech rendition of the transcript when available.
 - For browsers without MediaRecorder support, upload mode remains available.
+- Environment knobs:
+  - `OPENAI_SPEECH_MODEL` (default `gpt-4o-mini-tts`)
+  - `OPENAI_SPEECH_VOICE` (default `alloy`)
+  - `OPENAI_SPEECH_FORMAT` (default `mp3`)
 
 ## Testing & Builds
 - Run tests across workspaces:
