@@ -7,6 +7,7 @@ Local playground demonstrating the [OpenAI Agents SDK](https://github.com/openai
 - Greeting, summarizer, time helper, input coach, document store, and voice agents powered by OpenAI
 - Time helper with selectable location resolver: built-in Agents SDK tool or MCP endpoint mounted locally
 - Express backend with per-conversation log files under `server/logs/`
+- Input and response guardrails for moderation, attachment validation, and answer quality checks
 - Document storage workflow that saves uploads to `server/storage/` with auto-generated analysis notes
 - React/Vite chat client showing agent attribution, manager notes, and inline audio playback for captured and synthesized voice responses
 - TypeScript across backend and frontend with Vitest coverage for shared helpers
@@ -76,6 +77,20 @@ Agent identifiers referenced by `TTS_RESPONSE_AGENTS` (and in logs) are:
 - `input_coach` – suggests grammar/spelling improvements for user prompts.
 - `document_store` – ingests uploaded documents, stores them, and generates summaries.
 - `voice` – processes audio inputs (transcription + optional echo playback).
+- `guardrail` – virtual responder used when safety checks block a request or ask for clarification.
+
+## Guardrails
+
+Two safeguard layers run around every interaction and can be tuned via environment variables found in `server/.env.example`:
+
+- **Input guardrails** (`ENABLE_INPUT_MODERATION`, `INPUT_MODERATION_THRESHOLD`, `INPUT_ATTACHMENT_MAX_BYTES`, `ENABLE_TRANSCRIPTION_CONFIRMATION`)
+  - Blocks disallowed prompts using OpenAI moderation, enforces attachment type/size rules, and double-checks very short voice transcripts before routing them to specialists.
+  - When triggered the user sees a guardrail response and the conversation log records the reason under `stage: "input"`.
+- **Response guardrails** (`ENABLE_RESPONSE_GUARD`, `RESPONSE_GUARD_AGENTS`, `RESPONSE_GUARD_MODEL`, `RESPONSE_GUARD_RECOVERY`)
+  - Validates specialist answers before they reach the client. If a mismatch is detected it can log the issue, ask the user for clarification, or retry the specialist with corrective instructions.
+  - All outcomes are appended to the conversation log (`stage: "response"`) so you can audit why a reply was accepted, retried, or replaced with a guardrail clarification.
+
+Console output includes `[guardrails][input]` and `[guardrails][response]` debug lines so you can follow the decision flow while developing locally.
 
 ## Testing & Builds
 - Run tests across workspaces:

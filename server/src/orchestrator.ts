@@ -14,6 +14,7 @@ import { persistAudioBuffer } from './services/audioService';
 import type { ConversationStore } from './services/conversationStore';
 import type { InteractionLogger } from './services/interactionLogger';
 import { InputGuardService } from './services/inputGuardService';
+import { ResponseGuardService } from './services/responseGuardService';
 
 export class Orchestrator {
   private readonly manager: ManagerAgent;
@@ -25,6 +26,8 @@ export class Orchestrator {
   private readonly ttsAgents: Set<string>;
 
   private readonly inputGuard: InputGuardService;
+
+  private readonly responseGuard: ResponseGuardService;
 
   constructor(
     private readonly store: ConversationStore,
@@ -49,6 +52,7 @@ export class Orchestrator {
     this.ttsAgents = new Set(configuredAgents);
 
     this.inputGuard = new InputGuardService(this.logger);
+    this.responseGuard = new ResponseGuardService(this.logger);
   }
 
   createConversation(): Conversation {
@@ -225,10 +229,139 @@ export class Orchestrator {
           ...(currentAttachments ? { attachments: currentAttachments } : {}),
         });
 
+        let finalAgentResult: AgentResult = agentResult;
+        let deliverResponse = true;
+        let guardInterventionContent: string | undefined;
+        const guardLogDetails: Record<string, unknown> = {
+          evaluated: false,
+        };
+
+        if (this.responseGuard.shouldEvaluate(action.agent)) {
+          const evaluation = await this.responseGuard.evaluate({
+            conversationId,
+            agentId: action.agent,
+            userMessage: messageContent,
+            agentResponse: agentResult.content,
+          });
+
+          guardLogDetails.evaluated = true;
+          guardLogDetails.strategy = this.responseGuard.getRecoveryStrategy();
+          guardLogDetails.initial = evaluation;
+
+          if (evaluation.status === 'mismatch') {
+            const strategy = this.responseGuard.getRecoveryStrategy();
+
+            // eslint-disable-next-line no-console
+            console.log('[guardrails][response] mismatch detected', {
+              conversationId,
+              agent: action.agent,
+              strategy,
+              reason: evaluation.reason,
+            });
+
+            if (strategy === 'retry') {
+              const retryMessage = `${delegatedMessage}\n\nGuardrail feedback: ${
+                evaluation.reason ?? 'The previous response did not satisfy the user request.'
+              }\nPlease correct any issues and answer the user request directly.`;
+
+              const retryResult = await agent.handle({
+                conversation,
+                userMessage: retryMessage,
+                ...(currentAttachments ? { attachments: currentAttachments } : {}),
+              });
+
+              const retryEvaluation = await this.responseGuard.evaluate({
+                conversationId,
+                agentId: action.agent,
+                userMessage: messageContent,
+                agentResponse: retryResult.content,
+                attempt: 'retry',
+              });
+
+              guardLogDetails.retry = retryEvaluation;
+
+              if (retryEvaluation.status === 'ok') {
+                finalAgentResult = {
+                  ...retryResult,
+                  debug: {
+                    ...retryResult.debug,
+                    guardrailRetryReason: evaluation.reason,
+                  },
+                };
+                guardLogDetails.outcome = 'retry_success';
+              } else {
+                deliverResponse = false;
+                guardInterventionContent =
+                  retryEvaluation.followUp ??
+                  evaluation.followUp ??
+                  'I want to be sure I understood correctly—could you clarify your request?';
+                guardLogDetails.outcome = 'retry_escalated';
+                guardLogDetails.suppressed = {
+                  initial: agentResult.content,
+                  retry: retryResult.content,
+                };
+              }
+            } else if (strategy === 'clarify') {
+              deliverResponse = false;
+              guardInterventionContent =
+                evaluation.followUp ??
+                evaluation.reason ??
+                'I want to double-check I understood correctly—could you clarify your request?';
+              guardLogDetails.outcome = 'clarify';
+              guardLogDetails.suppressed = {
+                initial: agentResult.content,
+              };
+            } else {
+              guardLogDetails.outcome = 'logged_only';
+            }
+          } else if (evaluation.status === 'error') {
+            guardLogDetails.outcome = 'evaluation_error';
+          } else {
+            guardLogDetails.outcome = 'pass';
+          }
+        }
+
+        if (!deliverResponse) {
+          const guardContent =
+            guardInterventionContent ??
+            'I need a bit more detail before I can complete that request. Could you clarify?';
+
+          const guardMessage: ChatMessage = {
+            id: randomUUID(),
+            role: 'assistant',
+            agent: 'guardrail',
+            content: guardContent,
+            timestamp: Date.now(),
+          };
+
+          conversation.messages = [...conversation.messages, guardMessage];
+          this.store.upsertConversation(conversation);
+
+          const guardResponse: AgentResponse = {
+            agent: 'guardrail',
+            content: guardContent,
+          };
+          responses.push(guardResponse);
+
+          await this.logger.append({
+            timestamp: new Date(guardMessage.timestamp).toISOString(),
+            event: 'agent_response',
+            conversationId,
+            agent: 'guardrail',
+            payload: {
+              stage: 'response',
+              content: guardContent,
+              details: guardLogDetails,
+            },
+          });
+
+          continue;
+        }
+
         const assistantMessage: ChatMessage = {
           id: randomUUID(),
           role: 'assistant' as const,
-          content: agentResult.content,
+          content: finalAgentResult.content,
           agent: action.agent,
           timestamp: Date.now(),
         };
@@ -238,11 +371,11 @@ export class Orchestrator {
 
         const responsePayload: AgentResponse = {
           agent: action.agent,
-          content: agentResult.content,
+          content: finalAgentResult.content,
         };
 
-        if (agentResult.audio) {
-          responsePayload.audio = agentResult.audio;
+        if (finalAgentResult.audio) {
+          responsePayload.audio = finalAgentResult.audio;
         }
 
         const shouldSynthesize =
@@ -255,7 +388,7 @@ export class Orchestrator {
 
         if (shouldSynthesize) {
           try {
-            const speech = await synthesizeSpeech(agentResult.content);
+            const speech = await synthesizeSpeech(finalAgentResult.content);
             const stored = await persistAudioBuffer(
               speech.buffer,
               `tts-response-${action.agent}.${speech.extension}`
@@ -288,8 +421,8 @@ export class Orchestrator {
           delegatedMessage,
           managerInstructions: action.instructions,
           conversationSummary,
-          content: agentResult.content,
-          debug: agentResult.debug,
+          content: finalAgentResult.content,
+          debug: finalAgentResult.debug,
         };
 
         if (currentAttachments) {
@@ -314,6 +447,16 @@ export class Orchestrator {
           };
         }
 
+        if (guardLogDetails.evaluated) {
+          logPayload.guardrail = {
+            ...guardLogDetails,
+            initialContent:
+              guardLogDetails.outcome === 'retry_success'
+                ? agentResult.content
+                : undefined,
+          };
+        }
+
         await this.logger.append({
           timestamp: new Date(assistantMessage.timestamp).toISOString(),
           event: 'agent_response',
@@ -323,7 +466,7 @@ export class Orchestrator {
         });
 
         await this.enqueueTranscriptionFollowUp(
-          agentResult,
+          finalAgentResult,
           action.agent,
           conversation,
           conversationId,

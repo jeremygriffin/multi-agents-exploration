@@ -52,3 +52,11 @@
 - Rate-limit agents per user/IP to complement moderation.
 - Policy-driven guardrails (custom rule engines).
 - Metrics dashboard for guardrail activation rate.
+
+---
+
+## Implementation Notes
+- `InputGuardService` now enforces moderation, attachment limits, and short transcription confirmation before any manager planning occurs. Guard responses surface as the synthetic `guardrail` agent and include detailed log payloads.
+- `ResponseGuardService` validates specialist answers, supports retry/clarify/log-only recovery strategies, and records both the evaluation decision and any suppressed responses for auditing.
+- New environment flags in `server/.env.example` toggle the guard layers; defaults keep the features off so they can be enabled incrementally.
+- Added Vitest coverage for both services so moderation/attachment heuristics and response parsing stay reliable as we iterate.
