@@ -5,7 +5,8 @@ export type AgentId =
   | 'time_helper'
   | 'input_coach'
   | 'document_store'
-  | 'voice';
+  | 'voice'
+  | 'guardrail';
 
 export interface ChatMessage {
   id: string;
@@ -58,7 +59,7 @@ export interface UploadedFile {
 
 export interface ConversationLogEntry {
   timestamp: string;
-  event: 'user_message' | 'manager_plan' | 'agent_response' | 'mcp_tool';
+  event: 'user_message' | 'manager_plan' | 'agent_response' | 'mcp_tool' | 'guardrail';
   conversationId: string;
   agent?: AgentId;
   payload: unknown;

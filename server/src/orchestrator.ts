@@ -13,6 +13,7 @@ import { synthesizeSpeech, SpeechSynthesisError } from './services/speechSynthes
 import { persistAudioBuffer } from './services/audioService';
 import type { ConversationStore } from './services/conversationStore';
 import type { InteractionLogger } from './services/interactionLogger';
+import { InputGuardService } from './services/inputGuardService';
 
 export class Orchestrator {
   private readonly manager: ManagerAgent;
@@ -22,6 +23,8 @@ export class Orchestrator {
   private readonly ttsEnabled: boolean;
 
   private readonly ttsAgents: Set<string>;
+
+  private readonly inputGuard: InputGuardService;
 
   constructor(
     private readonly store: ConversationStore,
@@ -44,6 +47,8 @@ export class Orchestrator {
       .map((value) => value.trim())
       .filter((value) => value.length > 0);
     this.ttsAgents = new Set(configuredAgents);
+
+    this.inputGuard = new InputGuardService(this.logger);
   }
 
   createConversation(): Conversation {
@@ -109,6 +114,55 @@ export class Orchestrator {
 
     while (queue.length > 0) {
       const { messageContent, attachments: currentAttachments, source } = queue.shift()!;
+
+      const guardResult = await this.inputGuard.evaluate({
+        conversationId,
+        message: messageContent,
+        attachments: currentAttachments,
+        source,
+      });
+
+      if (guardResult.status !== 'allow') {
+        const guardMessageContent =
+          guardResult.userFeedback ??
+          (guardResult.status === 'blocked'
+            ? 'Your message could not be processed right now.'
+            : 'Could you please confirm or restate your request?');
+
+        const guardMessage: ChatMessage = {
+          id: randomUUID(),
+          role: 'assistant',
+          agent: 'guardrail',
+          content: guardMessageContent,
+          timestamp: Date.now(),
+        };
+
+        conversation.messages = [...conversation.messages, guardMessage];
+        this.store.upsertConversation(conversation);
+
+        const guardResponse: AgentResponse = {
+          agent: 'guardrail',
+          content: guardMessageContent,
+        };
+
+        responses.push(guardResponse);
+
+        await this.logger.append({
+          timestamp: new Date(guardMessage.timestamp).toISOString(),
+          event: 'agent_response',
+          conversationId,
+          agent: 'guardrail',
+          payload: {
+            stage: 'input',
+            disposition: guardResult.status,
+            reason: guardResult.reason,
+            details: guardResult.details,
+            content: guardMessageContent,
+          },
+        });
+
+        continue;
+      }
 
       const baseInput = currentAttachments?.length
         ? `${messageContent}\n\nAttachment metadata: ${currentAttachments
