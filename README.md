@@ -65,6 +65,7 @@ The MCP resolver is exposed locally at `/mcp/location` via the Streamable HTTP t
   - `OPENAI_SPEECH_FORMAT` (default `mp3`)
   - `ENABLE_TTS_RESPONSES` (`true` to synthesize agent replies)
   - `TTS_RESPONSE_AGENTS` (comma-separated allowlist, default `time_helper`)
+  - `ENABLE_VOICE_ECHO` (`true` to have the voice agent replay the user’s recording)
 
 ## Testing & Builds
 - Run tests across workspaces:

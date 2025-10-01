@@ -34,6 +34,12 @@ export class VoiceAgent implements Agent {
 
   readonly name = 'Voice Agent';
 
+  private readonly echoEnabled: boolean;
+
+  constructor() {
+    this.echoEnabled = process.env.ENABLE_VOICE_ECHO === 'true';
+  }
+
   async handle(context: AgentContext): Promise<AgentResult> {
     const attachment = context.attachments?.find((file) => isAudioAttachment(file.mimetype));
 
@@ -95,15 +101,15 @@ export class VoiceAgent implements Agent {
     }
 
     const base64OriginalAudio = transcoded.buffer.toString('base64');
-    const originalAudioPayload: NonNullable<AgentResult['audio']> = {
-      mimeType: transcoded.mimeType,
-      base64Data: base64OriginalAudio,
-    };
-    if (transcoded.note) {
-      originalAudioPayload.description = transcoded.note;
-    }
+    const originalAudioPayload: NonNullable<AgentResult['audio']> | undefined = this.echoEnabled
+      ? {
+          mimeType: transcoded.mimeType,
+          base64Data: base64OriginalAudio,
+          ...(transcoded.note ? { description: transcoded.note } : {}),
+        }
+      : undefined;
 
-    let responseAudioPayload: NonNullable<AgentResult['audio']> = originalAudioPayload;
+    let responseAudioPayload: NonNullable<AgentResult['audio']> | undefined = originalAudioPayload;
     let synthesisMetadata: Record<string, unknown> | undefined;
     let synthesisError: string | undefined;
 
@@ -112,9 +118,8 @@ export class VoiceAgent implements Agent {
         ? `I received your audio clip (${attachment.originalName}), but the transcription service reported an API quota limit (HTTP 429). Please update your OpenAI key or try again later.`
         : `Received your audio clip (${attachment.originalName}), but transcription is not available yet. Please try again later.`;
 
-      return {
+      const agentResult: AgentResult = {
         content: fallbackMessage,
-        audio: responseAudioPayload,
         debug: {
           storedAudio: persisted.storedPath,
           transcriptPath,
@@ -127,8 +132,15 @@ export class VoiceAgent implements Agent {
           transcriptionMetadata,
           rateLimitHit,
           synthesisError,
+          echoEnabled: this.echoEnabled,
         },
       };
+
+      if (responseAudioPayload) {
+        agentResult.audio = responseAudioPayload;
+      }
+
+      return agentResult;
     }
 
     try {
@@ -139,9 +151,8 @@ export class VoiceAgent implements Agent {
       responseAudioPayload = {
         mimeType: speech.mimeType,
         base64Data: base64Speech,
+        description: `Synthesized voice (${speech.extension})`,
       };
-
-      responseAudioPayload.description = `Synthesized voice (${speech.extension})`;
 
       synthesisMetadata = {
         storedSpeechPath: speechPersisted.storedPath,
@@ -157,9 +168,8 @@ export class VoiceAgent implements Agent {
       responseAudioPayload = originalAudioPayload;
     }
 
-    return {
+    const agentResult: AgentResult = {
       content: `Transcribed your audio clip (${attachment.originalName}): ${transcriptText}`,
-      audio: responseAudioPayload,
       debug: {
         storedAudio: persisted.storedPath,
         transcriptPath,
@@ -172,8 +182,15 @@ export class VoiceAgent implements Agent {
         transcriptionMetadata,
         synthesisMetadata,
         synthesisError,
+        echoEnabled: this.echoEnabled,
       },
       handoffUserMessage: transcriptText,
     };
+
+    if (responseAudioPayload) {
+      agentResult.audio = responseAudioPayload;
+    }
+
+    return agentResult;
   }
 }
