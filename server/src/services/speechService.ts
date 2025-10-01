@@ -12,6 +12,8 @@ export interface TranscriptionError extends Error {
 }
 
 const DEFAULT_TRANSCRIPTION_MODEL = process.env.OPENAI_TRANSCRIPTION_MODEL ?? 'gpt-4o-mini-transcribe';
+const MAX_ATTEMPTS = 3;
+const RETRYABLE_NODE_ERRORS = new Set(['ECONNRESET', 'ETIMEDOUT', 'ECONNREFUSED']);
 
 let client: OpenAI | null = null;
 
@@ -33,35 +35,74 @@ export const transcribeAudio = async (
 
   const file = await toFile(buffer, filename, { type: mimeType });
 
-  let response: Awaited<ReturnType<typeof apiClient.audio.transcriptions.create>>;
+  type TranscriptionResponse = Awaited<ReturnType<typeof apiClient.audio.transcriptions.create>>;
 
-  try {
-    response = await apiClient.audio.transcriptions.create({
-      file,
-      model: DEFAULT_TRANSCRIPTION_MODEL,
-      response_format: 'verbose_json',
-    });
-  } catch (error) {
-    const transcriptionError: TranscriptionError = new Error(
-      error instanceof Error ? error.message : 'Unknown transcription error'
-    );
+  let response: TranscriptionResponse | undefined;
+  let lastError: TranscriptionError | undefined;
 
-    if (error instanceof OpenAI.APIError) {
-      transcriptionError.status = error.status;
-      transcriptionError.details = error.error ?? error;
-    } else if (typeof error === 'object' && error !== null) {
-      transcriptionError.details = error;
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
+    try {
+      response = await apiClient.audio.transcriptions.create({
+        file,
+        model: DEFAULT_TRANSCRIPTION_MODEL,
+        response_format: 'json',
+      });
+      break;
+    } catch (error) {
+      const transcriptionError: TranscriptionError = new Error(
+        error instanceof Error ? error.message : 'Unknown transcription error'
+      );
+
+      if (error instanceof OpenAI.APIError) {
+        transcriptionError.status = error.status;
+        transcriptionError.details = error.error ?? error;
+
+        if (error.status !== 429 && error.status < 500) {
+          throw transcriptionError;
+        }
+      } else if (typeof error === 'object' && error !== null) {
+        transcriptionError.details = error;
+
+        const nodeError = (error as { cause?: { code?: string } }).cause?.code;
+        if (!nodeError || !RETRYABLE_NODE_ERRORS.has(nodeError)) {
+          throw transcriptionError;
+        }
+      } else {
+        throw transcriptionError;
+      }
+
+      lastError = transcriptionError;
+
+      if (attempt < MAX_ATTEMPTS - 1) {
+        const backoffMs = 250 * (attempt + 1);
+        await new Promise((resolve) => setTimeout(resolve, backoffMs));
+      }
     }
-
-    throw transcriptionError;
   }
 
-  const primaryText = typeof response.text === 'string' ? response.text.trim() : '';
+  if (!response) {
+    throw lastError ?? new Error('Transcription request failed without a response.');
+  }
+
+  const normalizeResponse = (): { text?: string; segments?: Array<{ text?: string }> } => {
+    if (typeof response === 'string') {
+      try {
+        return JSON.parse(response) as { text?: string; segments?: Array<{ text?: string }> };
+      } catch {
+        return {};
+      }
+    }
+
+    return response as { text?: string; segments?: Array<{ text?: string }> };
+  };
+
+  const normalized = normalizeResponse();
+
+  const primaryText = typeof normalized.text === 'string' ? normalized.text.trim() : '';
 
   let segmentText = '';
-  if ('segments' in response && Array.isArray((response as { segments?: Array<{ text?: string }> }).segments)) {
-    const segments = (response as { segments?: Array<{ text?: string }> }).segments ?? [];
-    segmentText = segments
+  if (Array.isArray(normalized.segments)) {
+    segmentText = normalized.segments
       .map((segment) => segment.text)
       .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
       .join(' ')
