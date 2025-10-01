@@ -97,11 +97,15 @@ export class Orchestrator {
     while (queue.length > 0) {
       const { messageContent, attachments: currentAttachments, source } = queue.shift()!;
 
-      const managerInput = currentAttachments?.length
+      const baseInput = currentAttachments?.length
         ? `${messageContent}\n\nAttachment metadata: ${currentAttachments
             .map((file) => `${file.originalName} (${file.mimetype}, ${file.size} bytes)`)
             .join(', ')}`
         : messageContent;
+
+      const managerInput = source === 'voice_transcription'
+        ? `Transcribed audio request (treat as typed text). Do not re-route to the voice agent unless new audio is provided.\n\n${baseInput}`
+        : baseInput;
 
       const plan = await this.manager.plan(conversation, managerInput);
 
