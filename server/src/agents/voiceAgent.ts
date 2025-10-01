@@ -51,6 +51,8 @@ export class VoiceAgent implements Agent {
     let transcriptionError: string | undefined;
     let transcriptionMetadata: Record<string, unknown> | undefined;
 
+    let rateLimitHit = false;
+
     try {
       const transcription = await transcribeAudio(transcoded.buffer, attachment.originalName, transcoded.mimeType);
       transcriptText = transcription.text;
@@ -64,6 +66,10 @@ export class VoiceAgent implements Agent {
         status: typedError.status,
         details: typedError.details,
       };
+
+      if (typedError.status === 429) {
+        rateLimitHit = true;
+      }
 
       const detailsNote = JSON.stringify(transcriptionMetadata, null, 2);
       const transcriptContent = `${buildTranscriptPlaceholder(attachment.originalName)}\n\n_Error: ${transcriptionError}_\n\n${detailsNote ? `Details: ${detailsNote}` : ''}`.trim();
@@ -81,8 +87,12 @@ export class VoiceAgent implements Agent {
     }
 
     if (!transcriptText) {
+      const fallbackMessage = rateLimitHit
+        ? `I received your audio clip (${attachment.originalName}), but the transcription service reported an API quota limit (HTTP 429). Please update your OpenAI key or try again later.`
+        : `Received your audio clip (${attachment.originalName}), but transcription is not available yet. Please try again later.`;
+
       return {
-        content: `Received your audio clip (${attachment.originalName}), but transcription is not available yet. Please try again later.`,
+        content: fallbackMessage,
         audio: audioPayload,
         debug: {
           storedAudio: persisted.storedPath,
@@ -94,6 +104,7 @@ export class VoiceAgent implements Agent {
           },
           transcriptionError,
           transcriptionMetadata,
+          rateLimitHit,
         },
       };
     }
