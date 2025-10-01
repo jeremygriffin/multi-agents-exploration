@@ -22,7 +22,10 @@ const getClient = (): OpenAI => {
     return client;
   }
 
-  client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  client = new OpenAI({
+    apiKey: process.env.OPENAI_API_KEY,
+    maxRetries: 0,
+  });
   return client;
 };
 
@@ -48,6 +51,7 @@ export const transcribeAudio = async (
         model: DEFAULT_TRANSCRIPTION_MODEL,
         response_format: 'json',
       });
+      console.error ('[speechService] transcription response', { response:  response });
       break;
     } catch (error) {
       const transcriptionError: TranscriptionError = new Error(
