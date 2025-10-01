@@ -6,6 +6,11 @@ export interface TranscriptionResult {
   raw?: unknown;
 }
 
+export interface TranscriptionError extends Error {
+  status?: number;
+  details?: unknown;
+}
+
 const DEFAULT_TRANSCRIPTION_MODEL = process.env.OPENAI_TRANSCRIPTION_MODEL ?? 'gpt-4o-mini-transcribe';
 
 let client: OpenAI | null = null;
@@ -28,25 +33,47 @@ export const transcribeAudio = async (
 
   const file = await toFile(buffer, filename, { type: mimeType });
 
-  const response = await apiClient.audio.transcriptions.create({
-    file,
-    model: DEFAULT_TRANSCRIPTION_MODEL,
-    response_format: 'verbose_json',
-  });
+  let response: Awaited<ReturnType<typeof apiClient.audio.transcriptions.create>>;
+
+  try {
+    response = await apiClient.audio.transcriptions.create({
+      file,
+      model: DEFAULT_TRANSCRIPTION_MODEL,
+      response_format: 'verbose_json',
+    });
+  } catch (error) {
+    const transcriptionError: TranscriptionError = new Error(
+      error instanceof Error ? error.message : 'Unknown transcription error'
+    );
+
+    if (error instanceof OpenAI.APIError) {
+      transcriptionError.status = error.status;
+      transcriptionError.details = error.error ?? error;
+    } else if (typeof error === 'object' && error !== null) {
+      transcriptionError.details = error;
+    }
+
+    throw transcriptionError;
+  }
 
   const primaryText = typeof response.text === 'string' ? response.text.trim() : '';
-  const segmentText = Array.isArray(response.segments)
-    ? response.segments
-        .map((segment) => segment.text)
-        .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
-        .join(' ')
-        .trim()
-    : '';
+
+  let segmentText = '';
+  if ('segments' in response && Array.isArray((response as { segments?: Array<{ text?: string }> }).segments)) {
+    const segments = (response as { segments?: Array<{ text?: string }> }).segments ?? [];
+    segmentText = segments
+      .map((segment) => segment.text)
+      .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+      .join(' ')
+      .trim();
+  }
 
   const text = primaryText || segmentText;
 
   if (!text) {
-    throw new Error('Transcription response did not include any text.');
+    const noTextError: TranscriptionError = new Error('Transcription response did not include any text.');
+    noTextError.details = response;
+    throw noTextError;
   }
 
   return {

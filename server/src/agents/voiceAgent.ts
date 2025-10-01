@@ -8,7 +8,7 @@ import {
   transcodeAudio,
   validateAudioMimeType,
 } from '../services/audioService';
-import { transcribeAudio } from '../services/speechService';
+import { transcribeAudio, type TranscriptionError } from '../services/speechService';
 import { ensureStorageDir } from '../utils/fileUtils';
 
 const isAudioAttachment = (mimetype: string | undefined): boolean =>
@@ -49,6 +49,7 @@ export class VoiceAgent implements Agent {
 
     let transcriptText = '';
     let transcriptionError: string | undefined;
+    let transcriptionMetadata: Record<string, unknown> | undefined;
 
     try {
       const transcription = await transcribeAudio(transcoded.buffer, attachment.originalName, transcoded.mimeType);
@@ -57,8 +58,15 @@ export class VoiceAgent implements Agent {
       const transcriptContent = `# Transcript\n\n${transcriptText}`;
       await writeFile(transcriptPath, transcriptContent, 'utf8');
     } catch (error) {
-      transcriptionError = error instanceof Error ? error.message : 'Unknown transcription error';
-      const transcriptContent = `${buildTranscriptPlaceholder(attachment.originalName)}\n\n_Error: ${transcriptionError}_`;
+      const typedError = error as TranscriptionError;
+      transcriptionError = typedError instanceof Error ? typedError.message : 'Unknown transcription error';
+      transcriptionMetadata = {
+        status: typedError.status,
+        details: typedError.details,
+      };
+
+      const detailsNote = JSON.stringify(transcriptionMetadata, null, 2);
+      const transcriptContent = `${buildTranscriptPlaceholder(attachment.originalName)}\n\n_Error: ${transcriptionError}_\n\n${detailsNote ? `Details: ${detailsNote}` : ''}`.trim();
       await writeFile(transcriptPath, transcriptContent, 'utf8');
     }
 
@@ -85,6 +93,7 @@ export class VoiceAgent implements Agent {
             note: transcoded.note,
           },
           transcriptionError,
+          transcriptionMetadata,
         },
       };
     }
@@ -101,6 +110,7 @@ export class VoiceAgent implements Agent {
           note: transcoded.note,
         },
         transcriptionLength: transcriptText.length,
+        transcriptionMetadata,
       },
       handoffUserMessage: transcriptText,
     };
