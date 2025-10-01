@@ -54,11 +54,12 @@ export const transcribeAudio = async (
         error instanceof Error ? error.message : 'Unknown transcription error'
       );
 
-        console.error('[speechService] error during transcription attempt', {
-            status: transcriptionError.status,
-            message: transcriptionError.message,
-            details: transcriptionError.details,
-        });
+      console.error('[speechService] error during transcription attempt', {
+        status: error instanceof OpenAI.APIError ? error.status : undefined,
+        code: error instanceof OpenAI.APIError ? error.code : undefined,
+        message: transcriptionError.message,
+        details: error,
+      });
 
       if (error instanceof OpenAI.APIError) {
         transcriptionError.status = error.status;
