@@ -63,9 +63,19 @@ The MCP resolver is exposed locally at `/mcp/location` via the Streamable HTTP t
   - `OPENAI_SPEECH_MODEL` (default `gpt-4o-mini-tts`)
   - `OPENAI_SPEECH_VOICE` (default `alloy`)
   - `OPENAI_SPEECH_FORMAT` (default `mp3`)
-  - `ENABLE_TTS_RESPONSES` (`true` to synthesize agent replies)
-  - `TTS_RESPONSE_AGENTS` (comma-separated allowlist, default `time_helper`)
-  - `ENABLE_VOICE_ECHO` (`true` to have the voice agent replay the user’s recording)
+- `ENABLE_TTS_RESPONSES` (`true` to synthesize agent replies)
+- `TTS_RESPONSE_AGENTS` (comma-separated allowlist, default `time_helper`)
+- `ENABLE_VOICE_ECHO` (`true` to have the voice agent replay the user’s recording)
+
+### Available agents
+
+Agent identifiers referenced by `TTS_RESPONSE_AGENTS` (and in logs) are:
+- `greeting` – welcomes the user and handles small-talk context switches.
+- `summarizer` – produces conversation recaps on demand.
+- `time_helper` – resolves locations/time zones and returns current time information.
+- `input_coach` – suggests grammar/spelling improvements for user prompts.
+- `document_store` – ingests uploaded documents, stores them, and generates summaries.
+- `voice` – processes audio inputs (transcription + optional echo playback).
 
 ## Testing & Builds
 - Run tests across workspaces:
