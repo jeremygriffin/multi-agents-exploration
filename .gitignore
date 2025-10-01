@@ -1,4 +1,6 @@
 .idea
+.DS_Store
+server/.DS_Store
 .env*
 !.env.example
 

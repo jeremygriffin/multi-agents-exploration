@@ -5,6 +5,7 @@
 - Centralise retry/backoff logic and honour recommended patterns from OpenAI’s latest guidance.
 - Review official documentation and align with future error structures: https://platform.openai.com/docs/guides/error-codes/api-errors.
 - Consider pluggable provider abstraction so alternative speech/text services can reuse the same resilience policies.
+- Implement configurable usage limits: cap daily tokens/calls globally and per end-user (e.g., authenticated account, IP, or session) to keep experimentation from exhausting shared quotas.
 
 ## Additional follow-ups
 - Add structured logging for cross-service tracing (request IDs, latency buckets).

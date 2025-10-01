@@ -9,6 +9,8 @@ import { TimeHelperAgent } from './agents/timeHelperAgent';
 import { VoiceAgent } from './agents/voiceAgent';
 import type { AgentId, AgentResponse, ChatMessage, Conversation, HandleMessageResult, UploadedFile } from './types';
 import type { Agent, AgentResult } from './agents/baseAgent';
+import { synthesizeSpeech, SpeechSynthesisError } from './services/speechSynthesisService';
+import { persistAudioBuffer } from './services/audioService';
 import type { ConversationStore } from './services/conversationStore';
 import type { InteractionLogger } from './services/interactionLogger';
 
@@ -16,6 +18,10 @@ export class Orchestrator {
   private readonly manager: ManagerAgent;
 
   private readonly agentRegistry: Record<string, Agent>;
+
+  private readonly ttsEnabled: boolean;
+
+  private readonly ttsAgents: Set<string>;
 
   constructor(
     private readonly store: ConversationStore,
@@ -31,6 +37,13 @@ export class Orchestrator {
       document_store: new DocumentStoreAgent(),
       voice: new VoiceAgent(),
     };
+
+    this.ttsEnabled = process.env.ENABLE_TTS_RESPONSES === 'true';
+    const configuredAgents = (process.env.TTS_RESPONSE_AGENTS ?? 'time_helper')
+      .split(',')
+      .map((value) => value.trim())
+      .filter((value) => value.length > 0);
+    this.ttsAgents = new Set(configuredAgents);
   }
 
   createConversation(): Conversation {
@@ -97,11 +110,15 @@ export class Orchestrator {
     while (queue.length > 0) {
       const { messageContent, attachments: currentAttachments, source } = queue.shift()!;
 
-      const managerInput = currentAttachments?.length
+      const baseInput = currentAttachments?.length
         ? `${messageContent}\n\nAttachment metadata: ${currentAttachments
             .map((file) => `${file.originalName} (${file.mimetype}, ${file.size} bytes)`)
             .join(', ')}`
         : messageContent;
+
+      const managerInput = source === 'voice_transcription'
+        ? `Transcribed audio request (treat as typed text). Do not re-route to the voice agent unless new audio is provided.\n\n${baseInput}`
+        : baseInput;
 
       const plan = await this.manager.plan(conversation, managerInput);
 
@@ -174,6 +191,43 @@ export class Orchestrator {
           responsePayload.audio = agentResult.audio;
         }
 
+        const shouldSynthesize =
+          this.ttsEnabled &&
+          !responsePayload.audio &&
+          this.ttsAgents.has(action.agent);
+
+        let ttsMetadata: Record<string, unknown> | undefined;
+        let ttsError: string | undefined;
+
+        if (shouldSynthesize) {
+          try {
+            const speech = await synthesizeSpeech(agentResult.content);
+            const stored = await persistAudioBuffer(
+              speech.buffer,
+              `tts-response-${action.agent}.${speech.extension}`
+            );
+
+            responsePayload.audio = {
+              mimeType: speech.mimeType,
+              base64Data: speech.buffer.toString('base64'),
+              description: `Synthesized response (${speech.extension})`,
+            };
+
+            ttsMetadata = {
+              storedPath: stored.storedPath,
+              extension: speech.extension,
+              mimeType: speech.mimeType,
+              model: (speech.raw as { request?: { model?: string } })?.request?.model,
+              voice: (speech.raw as { request?: { voice?: string } })?.request?.voice,
+            };
+          } catch (error) {
+            ttsError = error instanceof SpeechSynthesisError ? error.message : 'Speech synthesis failed';
+            ttsMetadata = {
+              error: error instanceof SpeechSynthesisError ? error.cause : error,
+            };
+          }
+        }
+
         responses.push(responsePayload);
 
         const logPayload: Record<string, unknown> = {
@@ -192,10 +246,17 @@ export class Orchestrator {
           }));
         }
 
-        if (agentResult.audio) {
+        if (responsePayload.audio) {
           logPayload.audio = {
-            mimeType: agentResult.audio.mimeType,
+            mimeType: responsePayload.audio.mimeType,
             hasAudio: true,
+          };
+        }
+
+        if (ttsMetadata) {
+          logPayload.tts = {
+            ...ttsMetadata,
+            error: ttsError,
           };
         }
 
