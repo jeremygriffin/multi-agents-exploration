@@ -17,6 +17,17 @@ const isAudioAttachment = (mimetype: string | undefined): boolean =>
 const buildTranscriptPlaceholder = (originalName: string): string =>
   `# Transcript Placeholder\n\n- Source file: ${originalName}\n- Status: Pending transcription integration.\n\n_No automated speech-to-text has been run yet._`;
 
+const buildTranscriptionFilename = (originalName: string, extension: string): string => {
+  const basePart = originalName.split(/[;?#]/)[0] ?? `audio.${extension}`;
+  const sanitizedBase = basePart.replace(/[^a-zA-Z0-9._-]/g, '_');
+
+  if (sanitizedBase.toLowerCase().endsWith(`.${extension.toLowerCase()}`)) {
+    return sanitizedBase;
+  }
+
+  return `${sanitizedBase}.${extension}`;
+};
+
 export class VoiceAgent implements Agent {
   readonly id = 'voice';
 
@@ -53,8 +64,14 @@ export class VoiceAgent implements Agent {
 
     let rateLimitHit = false;
 
+    const transcriptionFilename = buildTranscriptionFilename(attachment.originalName, validation.extension ?? 'webm');
+
     try {
-      const transcription = await transcribeAudio(transcoded.buffer, attachment.originalName, transcoded.mimeType);
+      const transcription = await transcribeAudio(
+        transcoded.buffer,
+        transcriptionFilename,
+        transcoded.mimeType
+      );
       transcriptText = transcription.text;
 
       const transcriptContent = `# Transcript\n\n${transcriptText}`;
