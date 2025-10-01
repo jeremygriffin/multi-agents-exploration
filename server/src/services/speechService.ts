@@ -58,6 +58,12 @@ export const transcribeAudio = async (
         transcriptionError.details = error.error ?? error;
 
         if (error.status < 500) {
+          // eslint-disable-next-line no-console
+          console.error('[speechService] transcription aborted (client error)', {
+            status: error.status,
+            message: transcriptionError.message,
+            details: transcriptionError.details,
+          });
           throw transcriptionError;
         }
       } else if (typeof error === 'object' && error !== null) {
@@ -65,9 +71,18 @@ export const transcribeAudio = async (
 
         const nodeError = (error as { cause?: { code?: string } }).cause?.code;
         if (!nodeError || !RETRYABLE_NODE_ERRORS.has(nodeError)) {
+          // eslint-disable-next-line no-console
+          console.error('[speechService] transcription aborted (non-retryable error)', {
+            message: transcriptionError.message,
+            details: transcriptionError.details,
+          });
           throw transcriptionError;
         }
       } else {
+        // eslint-disable-next-line no-console
+        console.error('[speechService] transcription aborted (unexpected error)', {
+          message: transcriptionError.message,
+        });
         throw transcriptionError;
       }
 
@@ -81,6 +96,11 @@ export const transcribeAudio = async (
   }
 
   if (!response) {
+    // eslint-disable-next-line no-console
+    console.error('[speechService] transcription failed after retries', {
+      message: lastError?.message,
+      details: lastError?.details,
+    });
     throw lastError ?? new Error('Transcription request failed without a response.');
   }
 
