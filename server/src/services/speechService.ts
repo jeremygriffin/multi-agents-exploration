@@ -57,7 +57,7 @@ export const transcribeAudio = async (
         transcriptionError.status = error.status;
         transcriptionError.details = error.error ?? error;
 
-        if (error.status !== 429 && error.status < 500) {
+        if (error.status < 500) {
           throw transcriptionError;
         }
       } else if (typeof error === 'object' && error !== null) {
