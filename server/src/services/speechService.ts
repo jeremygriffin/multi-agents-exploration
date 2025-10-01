@@ -41,6 +41,7 @@ export const transcribeAudio = async (
   let lastError: TranscriptionError | undefined;
 
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
+    console.error('[speechService] transcription attempt', { attempt: attempt + 1 });
     try {
       response = await apiClient.audio.transcriptions.create({
         file,
@@ -52,6 +53,12 @@ export const transcribeAudio = async (
       const transcriptionError: TranscriptionError = new Error(
         error instanceof Error ? error.message : 'Unknown transcription error'
       );
+
+        console.error('[speechService] error during transcription attempt', {
+            status: transcriptionError.status,
+            message: transcriptionError.message,
+            details: transcriptionError.details,
+        });
 
       if (error instanceof OpenAI.APIError) {
         transcriptionError.status = error.status;
