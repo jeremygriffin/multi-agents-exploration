@@ -92,6 +92,28 @@ Two safeguard layers run around every interaction and can be tuned via environme
 
 Console output includes `[guardrails][input]` and `[guardrails][response]` debug lines so you can follow the decision flow while developing locally.
 
+## Environment Variables
+
+Use `server/.env` (or shell exports) to override the defaults shown in `server/.env.example`. Unless noted otherwise, omit a variable to fall back to the documented default.
+
+- `OPENAI_API_KEY` *(required)* – API key with access to the referenced models.
+- `TIME_HELPER_LOCATION_PROVIDER` – choose how the time helper resolves locations; allowed values: `agents_sdk` or `mcp` (default `agents_sdk`).
+- `TIME_HELPER_MCP_URL` – optional URL for an alternate MCP server.
+- `OPENAI_SPEECH_MODEL` – text-to-speech model name (default `gpt-4o-mini-tts`).
+- `OPENAI_SPEECH_VOICE` – voice preset supported by the chosen speech model (default `alloy`).
+- `OPENAI_SPEECH_FORMAT` – audio container returned by synthesized speech, e.g., `mp3`, `opus`, `wav` (default `mp3`).
+- `ENABLE_TTS_RESPONSES` – `true`/`false`; synthesize specialist replies for agents listed in `TTS_RESPONSE_AGENTS` (default `false`).
+- `TTS_RESPONSE_AGENTS` – comma-separated agent IDs (see “Available agents”) eligible for TTS synthesis (default `time_helper`).
+- `ENABLE_VOICE_ECHO` – `true`/`false`; when `true` the voice agent echoes user recordings back after transcription (default `false`).
+- `ENABLE_INPUT_MODERATION` – `true`/`false`; enable OpenAI moderation checks on user text before routing (default `false`).
+- `INPUT_MODERATION_THRESHOLD` – number between `0` and `1`; minimum category score required to block a moderated request (default `0.5`).
+- `INPUT_ATTACHMENT_MAX_BYTES` – positive integer byte limit for uploaded attachments (default `10485760`, i.e., 10 MB).
+- `ENABLE_TRANSCRIPTION_CONFIRMATION` – `true`/`false`; require confirmation for very short voice transcripts before continuing (default `false`).
+- `ENABLE_RESPONSE_GUARD` – `true`/`false`; turn on the response validation layer (default `false`).
+- `RESPONSE_GUARD_AGENTS` – comma-separated agent IDs to evaluate (default `time_helper`).
+- `RESPONSE_GUARD_RECOVERY` – recovery strategy when a mismatch is detected; allowed values: `clarify`, `retry`, `log_only` (default `clarify`).
+- `RESPONSE_GUARD_MODEL` – language model used by the response guard evaluator (default `gpt-4o-mini`).
+
 ## Testing & Builds
 - Run tests across workspaces:
   ```bash
