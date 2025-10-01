@@ -63,6 +63,8 @@ The MCP resolver is exposed locally at `/mcp/location` via the Streamable HTTP t
   - `OPENAI_SPEECH_MODEL` (default `gpt-4o-mini-tts`)
   - `OPENAI_SPEECH_VOICE` (default `alloy`)
   - `OPENAI_SPEECH_FORMAT` (default `mp3`)
+  - `ENABLE_TTS_RESPONSES` (`true` to synthesize agent replies)
+  - `TTS_RESPONSE_AGENTS` (comma-separated allowlist, default `time_helper`)
 
 ## Testing & Builds
 - Run tests across workspaces:

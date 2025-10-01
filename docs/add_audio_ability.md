@@ -33,6 +33,7 @@
 - Add audio recording/upload controls to the React chat UI (using the browser MediaRecorder API where available, with manual file upload fallback).
 - Display audio message bubbles with play/pause controls; surface textual transcripts inline for accessibility.
 - Update the attachment handling code path to recognize audio files and flag them for `VoiceAgent` routing.
+- When `ENABLE_TTS_RESPONSES=true`, render synthesized audio clips for textual agent replies (default allowlist targets the time helper agent).
 
 ### 4. Configuration & Environment
 - Document new environment variables (e.g., maximum audio duration, speech model names) in `README.md` and `.env.example` as needed. (Current defaults: `OPENAI_SPEECH_MODEL`, `OPENAI_SPEECH_VOICE`, `OPENAI_SPEECH_FORMAT`.)
