@@ -14,6 +14,7 @@ export interface AgentResult {
     base64Data: string;
     description?: string;
   };
+  handoffUserMessage?: string;
 }
 
 export interface Agent {

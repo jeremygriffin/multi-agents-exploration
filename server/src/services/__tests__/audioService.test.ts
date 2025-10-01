@@ -9,7 +9,6 @@ import {
 
 import { existsSync } from 'fs';
 import { readFile, unlink } from 'fs/promises';
-import { join } from 'path';
 
 describe('audioService', () => {
   it('validates supported mime types', () => {

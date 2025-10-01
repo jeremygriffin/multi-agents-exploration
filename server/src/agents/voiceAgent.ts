@@ -8,6 +8,7 @@ import {
   transcodeAudio,
   validateAudioMimeType,
 } from '../services/audioService';
+import { transcribeAudio } from '../services/speechService';
 import { ensureStorageDir } from '../utils/fileUtils';
 
 const isAudioAttachment = (mimetype: string | undefined): boolean =>
@@ -42,12 +43,24 @@ export class VoiceAgent implements Agent {
 
     const transcoded = await transcodeAudio(attachment.buffer, validation.mimeType);
     const persisted = await persistAudioBuffer(transcoded.buffer, attachment.originalName);
-
-    const transcriptContent = buildTranscriptPlaceholder(attachment.originalName);
     const storageDir = await ensureStorageDir();
     const transcriptName = createTranscriptFilename(persisted.storedName);
     const transcriptPath = join(storageDir, transcriptName);
-    await writeFile(transcriptPath, transcriptContent, 'utf8');
+
+    let transcriptText = '';
+    let transcriptionError: string | undefined;
+
+    try {
+      const transcription = await transcribeAudio(transcoded.buffer, attachment.originalName, transcoded.mimeType);
+      transcriptText = transcription.text;
+
+      const transcriptContent = `# Transcript\n\n${transcriptText}`;
+      await writeFile(transcriptPath, transcriptContent, 'utf8');
+    } catch (error) {
+      transcriptionError = error instanceof Error ? error.message : 'Unknown transcription error';
+      const transcriptContent = `${buildTranscriptPlaceholder(attachment.originalName)}\n\n_Error: ${transcriptionError}_`;
+      await writeFile(transcriptPath, transcriptContent, 'utf8');
+    }
 
     const base64Audio = transcoded.buffer.toString('base64');
     const audioPayload: NonNullable<AgentResult['audio']> = {
@@ -59,8 +72,25 @@ export class VoiceAgent implements Agent {
       audioPayload.description = transcoded.note;
     }
 
+    if (!transcriptText) {
+      return {
+        content: `Received your audio clip (${attachment.originalName}), but transcription is not available yet. Please try again later.`,
+        audio: audioPayload,
+        debug: {
+          storedAudio: persisted.storedPath,
+          transcriptPath,
+          validation,
+          transcoding: {
+            format: transcoded.format,
+            note: transcoded.note,
+          },
+          transcriptionError,
+        },
+      };
+    }
+
     return {
-      content: `Received your audio clip (${attachment.originalName}). A placeholder transcript has been stored while speech-to-text integration is pending.`,
+      content: `Transcribed your audio clip (${attachment.originalName}): ${transcriptText}`,
       audio: audioPayload,
       debug: {
         storedAudio: persisted.storedPath,
@@ -70,7 +100,9 @@ export class VoiceAgent implements Agent {
           format: transcoded.format,
           note: transcoded.note,
         },
+        transcriptionLength: transcriptText.length,
       },
+      handoffUserMessage: transcriptText,
     };
   }
 }
