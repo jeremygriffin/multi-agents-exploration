@@ -3,7 +3,14 @@ export type AgentId =
   | 'summarizer'
   | 'time_helper'
   | 'input_coach'
-  | 'document_store';
+  | 'document_store'
+  | 'voice';
+
+export interface AgentAudioPayload {
+  mimeType: string;
+  base64Data: string;
+  description?: string;
+}
 
 export interface CreateConversationResponse {
   id: string;
@@ -13,6 +20,7 @@ export interface CreateConversationResponse {
 export interface AgentReply {
   agent: AgentId;
   content: string;
+  audio?: AgentAudioPayload;
 }
 
 export interface SendMessageResponse {
@@ -29,4 +37,5 @@ export interface ChatEntry {
   role: 'user' | 'agent' | 'note';
   content: string;
   agent?: AgentId | 'manager';
+  audio?: AgentAudioPayload;
 }

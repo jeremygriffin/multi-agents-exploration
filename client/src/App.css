@@ -124,6 +124,11 @@ body {
   color: #bbf7d0;
 }
 
+.agent-chip.voice {
+  background: rgba(14, 165, 233, 0.25);
+  color: #bae6fd;
+}
+
 .input-panel {
   display: flex;
   flex-direction: column;
@@ -148,11 +153,13 @@ body {
 
 .input-actions {
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-start;
   align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
 }
 
-.input-actions button {
+.input-actions button[type='submit'] {
   background: linear-gradient(135deg, #38bdf8, #22d3ee);
   border: none;
   color: #0f172a;
@@ -162,7 +169,7 @@ body {
   cursor: pointer;
 }
 
-.input-actions button:disabled {
+.input-actions button[type='submit']:disabled {
   background: rgba(148, 163, 184, 0.3);
   color: rgba(226, 232, 240, 0.4);
   cursor: not-allowed;
@@ -182,6 +189,51 @@ body {
 
 .file-button:hover {
   background: rgba(148, 163, 184, 0.3);
+}
+
+.record-button {
+  border: 1px solid rgba(239, 68, 68, 0.6);
+  background: rgba(239, 68, 68, 0.1);
+  color: #fecdd3;
+  padding: 0.5rem 0.9rem;
+  border-radius: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 120ms ease-in-out, border-color 120ms ease-in-out;
+}
+
+.record-button:hover {
+  background: rgba(248, 113, 113, 0.18);
+}
+
+.record-button.active {
+  background: rgba(220, 38, 38, 0.25);
+  border-color: rgba(248, 113, 113, 0.8);
+}
+
+.record-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.chat-text {
+  white-space: pre-wrap;
+}
+
+.chat-audio {
+  margin-top: 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.chat-audio audio {
+  max-width: 280px;
+}
+
+.audio-note {
+  font-size: 0.75rem;
+  color: #94a3b8;
 }
 
 .error-message {

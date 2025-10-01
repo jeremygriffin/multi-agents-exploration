@@ -25,6 +25,8 @@ const agentColor = (agent?: AgentReply['agent'] | 'manager'): string => {
       return 'agent-chip coach';
     case 'document_store':
       return 'agent-chip storage';
+    case 'voice':
+      return 'agent-chip voice';
     case 'manager':
       return 'agent-chip manager';
     default:
@@ -39,11 +41,16 @@ const App = () => {
   const [attachment, setAttachment] = useState<File | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingError, setRecordingError] = useState<string | null>(null);
+  const [recordingSupported, setRecordingSupported] = useState(false);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const recordedChunksRef = useRef<Blob[]>([]);
 
   const canSend = useMemo(
-    () => Boolean(conversationId && input.trim().length > 0 && !isLoading),
-    [conversationId, input, isLoading]
+    () => Boolean(conversationId && (input.trim().length > 0 || attachment) && !isLoading && !isRecording),
+    [conversationId, input, attachment, isLoading, isRecording]
   );
 
   useEffect(() => {
@@ -68,23 +75,105 @@ const App = () => {
   }, []);
 
   useEffect(() => {
+    const supported =
+      typeof window !== 'undefined' &&
+      typeof navigator !== 'undefined' &&
+      'mediaDevices' in navigator &&
+      Boolean(navigator.mediaDevices?.getUserMedia) &&
+      'MediaRecorder' in window;
+
+    setRecordingSupported(supported);
+  }, []);
+
+  useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [messages]);
 
+  const handleToggleRecording = async () => {
+    if (isRecording) {
+      mediaRecorderRef.current?.stop();
+      return;
+    }
+
+    if (!recordingSupported) {
+      setRecordingError('Audio recording is not supported in this browser.');
+      return;
+    }
+
+    try {
+      setRecordingError(null);
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream);
+      recordedChunksRef.current = [];
+
+      recorder.addEventListener('dataavailable', (event) => {
+        if (event.data && event.data.size > 0) {
+          recordedChunksRef.current.push(event.data);
+        }
+      });
+
+      recorder.addEventListener('stop', () => {
+        const blob = new Blob(recordedChunksRef.current, { type: recorder.mimeType || 'audio/webm' });
+        stream.getTracks().forEach((track) => track.stop());
+        mediaRecorderRef.current = null;
+        setIsRecording(false);
+
+        if (blob.size === 0) {
+          return;
+        }
+
+        const extension = blob.type.split('/')[1] ?? 'webm';
+        const fileName = `voice-message-${Date.now()}.${extension}`;
+        const file = new File([blob], fileName, { type: blob.type || 'audio/webm' });
+        setAttachment(file);
+      });
+
+      recorder.addEventListener('error', (event) => {
+        const maybeError = (event as unknown as { error?: { message?: string } }).error;
+        const message = maybeError?.message ?? 'unknown error';
+        setRecordingError(`Recorder error: ${message}`);
+        stream.getTracks().forEach((track) => track.stop());
+        mediaRecorderRef.current = null;
+        setIsRecording(false);
+      });
+
+      mediaRecorderRef.current = recorder;
+      recordedChunksRef.current = [];
+      setAttachment(null);
+      recorder.start();
+      setIsRecording(true);
+    } catch (err) {
+      setRecordingError(err instanceof Error ? err.message : 'Failed to start recording');
+      setIsRecording(false);
+      mediaRecorderRef.current?.stream.getTracks().forEach((track) => track.stop());
+      mediaRecorderRef.current = null;
+    }
+  };
+
+  const handleAttachmentSelection = (file: File | null) => {
+    if (isRecording) {
+      mediaRecorderRef.current?.stop();
+    }
+
+    setRecordingError(null);
+    setAttachment(file);
+  };
+
   const handleSend = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
-    if (!conversationId || input.trim().length === 0) {
+    if (!conversationId || (!attachment && input.trim().length === 0)) {
       return;
     }
 
     const trimmed = input.trim();
+    const messageContent = trimmed.length > 0 ? trimmed : '[Voice message]';
     const userEntry: ChatEntry = {
       id: getEntryId(),
       role: 'user',
-      content: trimmed,
+      content: messageContent,
     };
 
     const attachmentNote = attachment
@@ -102,12 +191,13 @@ const App = () => {
     setError(null);
 
     try {
-      const response = await sendMessage(conversationId, trimmed, attachment ?? undefined);
+      const response = await sendMessage(conversationId, messageContent, attachment ?? undefined);
       const replies: ChatEntry[] = response.responses.map((reply) => ({
         id: getEntryId(),
         role: 'agent',
         content: reply.content,
         agent: reply.agent,
+        audio: reply.audio,
       }));
 
       const managerNote = response.managerNotes
@@ -133,6 +223,7 @@ const App = () => {
     } finally {
       setIsLoading(false);
       setAttachment(null);
+      setRecordingError(null);
     }
   };
 
@@ -140,7 +231,7 @@ const App = () => {
     <div className="app-shell">
       <header className="app-header">
         <h1>Multi-Agent Playground</h1>
-        <p className="app-subtitle">Greeting · Summarizer · Time Helper · Input Coach</p>
+        <p className="app-subtitle">Greeting · Summarizer · Time Helper · Input Coach · Voice</p>
       </header>
 
       <main className="chat-container">
@@ -152,7 +243,22 @@ const App = () => {
                   {entry.role === 'user' ? 'You' : formatAgentLabel(entry.agent ?? 'manager')}
                 </span>
               </div>
-              <div className="chat-bubble">{entry.content}</div>
+              <div className="chat-bubble">
+                <div className="chat-text">{entry.content}</div>
+                {entry.audio && (
+                  <div className="chat-audio">
+                    <audio
+                      controls
+                      src={`data:${entry.audio.mimeType};base64,${entry.audio.base64Data}`}
+                    >
+                      <track kind="captions" />
+                    </audio>
+                    {entry.audio.description && (
+                      <span className="audio-note">{entry.audio.description}</span>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
           ))}
           {isLoading && (
@@ -182,18 +288,30 @@ const App = () => {
                 type="file"
                 onChange={(event) => {
                   const file = event.target.files?.[0] ?? null;
-                  setAttachment(file);
+                  handleAttachmentSelection(file);
+                  event.target.value = '';
                 }}
-                accept=".pdf,.doc,.docx,.txt,.md"
-                disabled={isLoading}
+                accept=".pdf,.doc,.docx,.txt,.md,audio/*"
+                disabled={isLoading || isRecording}
                 hidden
               />
             </label>
+            {recordingSupported && (
+              <button
+                type="button"
+                className={`record-button${isRecording ? ' active' : ''}`}
+                onClick={handleToggleRecording}
+                disabled={isLoading}
+              >
+                {isRecording ? 'Stop recording' : 'Record audio'}
+              </button>
+            )}
             <button type="submit" disabled={!canSend}>
               Send
             </button>
           </div>
         </form>
+        {recordingError && <p className="error-message">{recordingError}</p>}
         {error && <p className="error-message">{error}</p>}
       </footer>
     </div>

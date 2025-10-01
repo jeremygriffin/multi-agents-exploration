@@ -69,6 +69,8 @@ export const formatAgentLabel = (agent: AgentReply['agent'] | 'manager'): string
       return 'Input Coach Agent';
     case 'document_store':
       return 'Document Store Agent';
+    case 'voice':
+      return 'Voice Agent';
     case 'manager':
       return 'Manager Notes';
     default:
