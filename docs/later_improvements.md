@@ -11,3 +11,4 @@
 - Add structured logging for cross-service tracing (request IDs, latency buckets).
 - Monitor storage usage and institute cleanup/retention policies for persisted audio/transcripts.
 - Expand test coverage for voice workflows with mocked API responses (success, rate limit, transient failure).
+- Integrate FFmpeg-based transcoding in the audio service to normalise formats and unlock richer post-processing (waveforms, loudness checks).
