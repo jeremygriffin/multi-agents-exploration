@@ -12,3 +12,4 @@
 - Monitor storage usage and institute cleanup/retention policies for persisted audio/transcripts.
 - Expand test coverage for voice workflows with mocked API responses (success, rate limit, transient failure).
 - Integrate FFmpeg-based transcoding in the audio service to normalise formats and unlock richer post-processing (waveforms, loudness checks).
+- Teach the time helper to treat follow-up questions about "tomorrow", "in 24 hours", or explicit future dates as requests for future timestamps instead of re-stating the current time. The MCP classifier already extracts a target date—preserve the resolved location, apply the offset in the same timezone, and update response formatting/tests so follow-up queries get the expected future time.
