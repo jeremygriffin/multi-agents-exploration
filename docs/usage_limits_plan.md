@@ -14,7 +14,7 @@
 
 2. **Session reset UX**
    - Add `New Session` control in the chat UI. Clicking should:
-     - Prompt for confirmation (optional).
+     - Prompt for confirmation ~(optional)~, explain the chat will be cleared.
      - Clear local storage entries tied to session + chat history.
      - Request backend endpoint (`POST /sessions/reset`) to expire existing session state and respond with a fresh UUID.
    - Update frontend state management to rebuild conversation context when session changes.
