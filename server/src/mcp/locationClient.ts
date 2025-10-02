@@ -13,8 +13,39 @@ export interface LocationMcpPayload {
     iso3?: string;
     timezone: string;
     confidence: number;
+    latitude?: number;
+    longitude?: number;
   }>;
   matchCount: number;
+}
+
+export interface SunTimesPayload {
+  timezone: string;
+  date: string | null;
+  sunrise: string | null;
+  sunset: string | null;
+  solarNoon: string | null;
+  daylightDurationMinutes: number | null;
+}
+
+export interface MoonTimesPayload {
+  timezone: string;
+  date: string | null;
+  rise: string | null;
+  set: string | null;
+  alwaysUp: boolean;
+  alwaysDown: boolean;
+}
+
+export interface CalendarEventsPayload {
+  timezone: string;
+  date: string | null;
+  events: Array<{
+    name: string;
+    type?: string;
+    note?: string | null;
+    date?: string | null;
+  }>;
 }
 
 export class LocationMcpClient {
@@ -53,19 +84,18 @@ export class LocationMcpClient {
     return clientPromise;
   }
 
-  async resolveLocation(query: string): Promise<LocationMcpPayload | null> {
+  private async callTool<T>(name: string, args: Record<string, unknown>): Promise<T | null> {
     const client = await this.getClient();
 
     const result = await client.callTool({
-      name: 'resolve_location',
-      arguments: {
-        query,
-      },
+      name,
+      arguments: args,
     });
 
     // eslint-disable-next-line no-console
     console.debug('[MCP] callTool result', {
-      query,
+      name,
+      args,
       isError: result.isError,
       hasStructured: Boolean((result as { structuredContent?: unknown }).structuredContent),
       rawResult: inspect(result, { depth: null, breakLength: Infinity }),
@@ -77,7 +107,7 @@ export class LocationMcpClient {
 
     const structured = (result as { structuredContent?: unknown }).structuredContent;
     if (structured && typeof structured === 'object') {
-      return structured as LocationMcpPayload;
+      return structured as T;
     }
 
     const contentItems = Array.isArray((result as { content?: unknown }).content)
@@ -93,12 +123,42 @@ export class LocationMcpClient {
       if (!rawText) {
         return null;
       }
-      return JSON.parse(rawText) as LocationMcpPayload;
+      return JSON.parse(rawText) as T;
     } catch (error) {
       // eslint-disable-next-line no-console
       console.warn('Failed to parse MCP payload', error);
       return null;
     }
+  }
+
+  async resolveLocation(query: string): Promise<LocationMcpPayload | null> {
+    return this.callTool<LocationMcpPayload>('resolve_location', { query });
+  }
+
+  async getSunTimes(args: {
+    latitude: number;
+    longitude: number;
+    timezone: string;
+    date?: string;
+  }): Promise<SunTimesPayload | null> {
+    return this.callTool<SunTimesPayload>('get_sun_times', args);
+  }
+
+  async getMoonTimes(args: {
+    latitude: number;
+    longitude: number;
+    timezone: string;
+    date?: string;
+  }): Promise<MoonTimesPayload | null> {
+    return this.callTool<MoonTimesPayload>('get_moon_times', args);
+  }
+
+  async getCalendarEvents(args: {
+    iso2?: string;
+    timezone: string;
+    date?: string;
+  }): Promise<CalendarEventsPayload | null> {
+    return this.callTool<CalendarEventsPayload>('get_calendar_events', args);
   }
 }
 

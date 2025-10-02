@@ -44,3 +44,11 @@ Goal: teach the existing `time_helper` agent to answer broader time-based querie
 - Add planetary visibility or meteor shower data via additional MCP tools.
 - Allow the manager to combine multiple results (e.g., “What’s the time and sunset today?”) by composing tool calls.
 - Cache common holiday lookups to avoid repeated calculations.
+
+---
+
+## Implementation Notes (2025-10-01)
+- MCP server now exposes `get_sun_times`, `get_moon_times`, and `get_calendar_events` alongside the existing `resolve_location` tool. Helpers in `server/src/mcp/timeUtils.ts` handle timezone-aware conversions.
+- `TimeHelperAgent` classifies each request (current time, sun, moon, calendar), routes to the appropriate tool, and formats the response. When the resolver returns multiple matches it pauses for clarification before making downstream calls.
+- Conversation logs capture every tool invocation with `tool` metadata so you can trace why a particular answer was produced.
+- Vitest coverage exercises the new utilities and formatter routines to guard against formatting regressions.

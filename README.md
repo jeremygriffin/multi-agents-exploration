@@ -6,6 +6,7 @@ Local playground demonstrating the [OpenAI Agents SDK](https://github.com/openai
 - Manager agent that selects and coordinates micro-agents per user message
 - Greeting, summarizer, time helper, input coach, document store, and voice agents powered by OpenAI
 - Time helper with selectable location resolver: built-in Agents SDK tool or MCP endpoint mounted locally
+- Extended time helper answers (current time, sunrise/sunset, moonrise/moonset, public holidays) via MCP tools
 - Express backend with per-conversation log files under `server/logs/`
 - Input and response guardrails for moderation, attachment validation, and answer quality checks
 - Document storage workflow that saves uploads to `server/storage/` with auto-generated analysis notes
@@ -52,6 +53,14 @@ export TIME_HELPER_LOCATION_PROVIDER=mcp
 Optional overrides:
 
 - `TIME_HELPER_MCP_URL` – defaults to `http://127.0.0.1:${PORT:-3001}/mcp/location`. Point to another MCP server if desired.
+
+When MCP mode is enabled the agent can:
+- Fetch current local time (default behaviour)
+- Compute sunrise and sunset times using the `get_sun_times` tool (requires location coordinates)
+- Compute moonrise and moonset via `get_moon_times`
+- Surface notable calendar events/holidays with `get_calendar_events`
+
+These tools return ISO timestamps that the agent reformats for conversation responses, and each invocation is logged in the conversation log with `tool` metadata for auditing.
 
 The MCP resolver is exposed locally at `/mcp/location` via the Streamable HTTP transport so you can observe raw tool calls separately from the Agents SDK workflow.
 

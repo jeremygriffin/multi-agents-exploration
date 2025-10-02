@@ -11,6 +11,21 @@ const ResponseGuardSchema = z.object({
   follow_up: z.string().optional(),
 });
 
+const isTestEnvironment = () =>
+  process.env.NODE_ENV === 'test' || typeof process.env.VITEST_WORKER_ID !== 'undefined';
+
+const debugLog = (...args: Parameters<typeof console.log>) => {
+  if (!isTestEnvironment()) {
+    console.log(...args);
+  }
+};
+
+const errorLog = (...args: Parameters<typeof console.error>) => {
+  if (!isTestEnvironment()) {
+    console.error(...args);
+  }
+};
+
 export type ResponseGuardEvaluationStatus = 'ok' | 'mismatch' | 'error';
 
 export type ResponseGuardRecoveryStrategy = 'clarify' | 'retry' | 'log_only';
@@ -62,8 +77,9 @@ export class ResponseGuardService {
       new OpenAIAgent({
         model: process.env.RESPONSE_GUARD_MODEL ?? 'gpt-4o-mini',
         temperature: 0,
-        system_instruction:
-          'You validate whether specialist agent responses resolve user requests. Respond ONLY with JSON matching the schema {"status": "ok" | "mismatch", "confidence": number (0-1, optional), "reason": string, "follow_up": string}.',
+        system_instruction: `You validate whether specialist agent responses resolve user requests.
+Return ONLY JSON matching the schema {"status": "ok" | "mismatch", "confidence": number (0-1, optional), "reason": string, "follow_up": string}.
+Treat a response as acceptable (status "ok") when the agent politely asks for missing information that is required to complete the task (for example, asking the user to specify a location before giving the time).`,
       });
   }
 
@@ -94,8 +110,7 @@ export class ResponseGuardService {
   async evaluate(options: ResponseGuardEvaluateOptions): Promise<ResponseGuardEvaluation> {
     const { conversationId, agentId, userMessage, agentResponse, attempt = 'initial' } = options;
 
-    // eslint-disable-next-line no-console
-    console.log('[guardrails][response] evaluating', {
+    debugLog('[guardrails][response] evaluating', {
       conversationId,
       agentId,
       attempt,
@@ -116,8 +131,7 @@ export class ResponseGuardService {
       try {
         parsed = ResponseGuardSchema.parse(JSON.parse(raw));
       } catch (error) {
-        // eslint-disable-next-line no-console
-        console.error('[guardrails][response] parsing failure', { raw, error });
+        errorLog('[guardrails][response] parsing failure', { raw, error });
         this.logGuardEvent(conversationId, {
           stage: 'response',
           agentId,
@@ -134,26 +148,34 @@ export class ResponseGuardService {
 
       const evaluation: ResponseGuardEvaluation = {
         status: parsed.status,
-        confidence: parsed.confidence,
-        reason: parsed.reason,
-        followUp: parsed.follow_up,
         rawOutput: raw,
       };
+
+      if (typeof parsed.confidence === 'number') {
+        evaluation.confidence = parsed.confidence;
+      }
+
+      if (typeof parsed.reason === 'string' && parsed.reason.trim().length > 0) {
+        evaluation.reason = parsed.reason.trim();
+      }
+
+      if (typeof parsed.follow_up === 'string' && parsed.follow_up.trim().length > 0) {
+        evaluation.followUp = parsed.follow_up.trim();
+      }
 
       this.logGuardEvent(conversationId, {
         stage: 'response',
         agentId,
         attempt,
         disposition: parsed.status,
-        confidence: parsed.confidence,
-        reason: parsed.reason,
-        follow_up: parsed.follow_up,
+        ...(typeof parsed.confidence === 'number' ? { confidence: parsed.confidence } : {}),
+        ...(parsed.reason ? { reason: parsed.reason } : {}),
+        ...(parsed.follow_up ? { follow_up: parsed.follow_up } : {}),
       });
 
       return evaluation;
     } catch (error) {
-      // eslint-disable-next-line no-console
-      console.error('[guardrails][response] evaluation error', {
+      errorLog('[guardrails][response] evaluation error', {
         conversationId,
         agentId,
         attempt,

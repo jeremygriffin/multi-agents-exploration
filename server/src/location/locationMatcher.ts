@@ -14,6 +14,8 @@ interface CityTimezoneRecord {
   iso2?: string;
   iso3?: string;
   timezone: string;
+  lat?: number;
+  lng?: number;
 }
 
 export interface LocationMatchInternal {
@@ -24,6 +26,8 @@ export interface LocationMatchInternal {
   iso3?: string;
   timezone: string;
   confidence: number;
+  latitude?: number;
+  longitude?: number;
 }
 
 const normalizeQuery = (query: unknown): string => {
@@ -74,6 +78,11 @@ export const buildLocationMatches = (query: unknown): LocationMatchInternal[] =>
 
     if (match.iso3) {
       entry.iso3 = match.iso3;
+    }
+
+    if (typeof match.lat === 'number' && typeof match.lng === 'number') {
+      entry.latitude = match.lat;
+      entry.longitude = match.lng;
     }
 
     seen.set(key, entry);
