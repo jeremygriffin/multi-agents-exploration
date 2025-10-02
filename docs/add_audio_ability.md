@@ -1,52 +1,70 @@
 # Voice Interaction Feature Plan
 
 ## Overview
-- Introduce a voice-capable sub-agent that can handle audio input/output within the existing multi-agent workflow.
-- Keep the initial scope to file passthrough and validation; defer heavy audio processing (e.g., FFmpeg transcoding) to a later iteration.
+- Voice agent is live: audio clips recorded or uploaded in the UI route to the `voice_agent`, get transcribed via OpenAI Speech-to-Text, and responses are optionally synthesized back to audio for playback.
+- Current scope intentionally keeps audio processing lightweight—`audioService` validates formats and stores originals; FFmpeg transcoding is deferred.
+- Logging of audio interactions mirrors text flow, and transcripts plus generated TTS audio are written alongside other artifacts under `server/storage`.
 
-## Goals
-- Allow users to upload short audio clips (supported formats only) that the manager agent can route to a new voice agent.
-- Return synthesized speech responses to the frontend while preserving text transcripts for logging and storage consistency.
-- Maintain the existing interaction logging conventions so MCP and SDK tool activity remains traceable.
+## Goals (Now Achieved)
+- Allow users to upload or record short audio clips that the manager routes to the `voice_agent`.
+- Store validated audio attachments and transcripts using the shared timestamped naming convention in `server/storage`.
+- Return synthesized speech responses (for agents listed in `TTS_RESPONSE_AGENTS` when `ENABLE_TTS_RESPONSES=true`) while always delivering text transcripts.
+- Emit guardrail and debugging logs so audio events appear in both stdout and per-interaction files.
+
+## Current Behavior Summary
+- Frontend offers MediaRecorder capture plus manual upload; accepted MIME types mirror `audioService` configuration.
+- `speechService.transcribeAudio` retries transient failures, surfaces explicit status/message on errors, and respects `ENABLE_TRANSCRIPTION_CONFIRMATION` for short clips.
+- `speechService.synthesizeSpeech` generates agent replies when enabled; optional echo of the user clip is controlled by `ENABLE_VOICE_ECHO` (default off).
+- Manager routing detects audio attachments, invokes the voice agent, and merges the agent's text + synthesized audio into conversation history.
 
 ## Deliverables
-- Backend scaffolding for audio handling, including validation and future transcoding hooks.
-- Voice agent definition wired into the manager routing logic and conversation history.
-- Frontend UI updates to capture audio input, trigger playback of agent responses, and fall back to text when audio is unavailable.
-- Tests covering audio validation, routing decisions, and UI state transitions.
+- ✅ Backend audio service with validation stubs and TODO for FFmpeg normalization.
+- ✅ Voice agent definition, storage integration, and routing hand-offs back to manager after transcription.
+- ✅ React UI updates for recording/uploading, transcript display, and audio playback of agent responses.
+- ✅ Vitest coverage for audio validation, guardrails, and voice agent orchestration.
 
-## Implementation Steps
+## Remaining Work & Enhancements
+- Integrate FFmpeg-based transcoding in `audioService.transcodeAudio` to normalize sample rates and provide waveform previews.
+- Expand automated tests to cover end-to-end audio flows (frontend + backend) and failure recovery scenarios.
+- Tighten rate limiting / quota awareness for speech APIs; see `docs/later_improvements.md`.
+- Expose per-agent configuration to toggle TTS output individually instead of the allowlist environment variable.
+- Improve accessibility by providing captions/subtitles for synthesized audio.
 
-### 1. Backend Foundation
-- Create `server/src/services/audioService.ts` with `validateMimeType` and `transcodeAudio` stubs (currently pass-through returning the original buffer) plus TODO for FFmpeg integration.
-- Add unit tests (e.g., `server/src/services/__tests__/audioService.test.ts`) verifying accepted/rejected MIME types and pass-through behavior.
-- Extend storage utilities to persist uploaded audio alongside generated transcripts in `server/storage`, following the timestamped naming scheme.
+## Implementation Notes
 
-### 2. Voice Agent
-- Define `VoiceAgent` using the Agents SDK with tools to:
-  - Accept audio attachments from the manager (validated and stored via `audioService`).
-  - Call OpenAI speech-to-text for transcription and text-to-speech for responses (now implemented with real OpenAI APIs, returning synthesized audio to the UI).
-- Ensure the agent logs its tool inputs/outputs to the existing interaction log files for traceability.
-- Update the manager agent routing rules so it detects audio inputs and delegates to `VoiceAgent`; allow `VoiceAgent` to hand control back when appropriate.
+### Backend Foundation
+- `server/src/services/audioService.ts` validates MIME types and leaves a placeholder for future transcoding.
+- Tests in `server/src/services/__tests__/audioService.test.ts` and guardrail suites validate MIME enforcement and logging.
+- Storage utilities persist audio artifacts using the `<timestamp>_<basename>` pattern, generating `.transcript.md` companions.
 
-### 3. Frontend Enhancements
-- Add audio recording/upload controls to the React chat UI (using the browser MediaRecorder API where available, with manual file upload fallback).
-- Display audio message bubbles with play/pause controls; surface textual transcripts inline for accessibility.
-- Update the attachment handling code path to recognize audio files and flag them for `VoiceAgent` routing.
-- When `ENABLE_TTS_RESPONSES=true`, render synthesized audio clips for textual agent replies (default allowlist targets the time helper agent).
+### Voice Agent
+- `server/src/agents/voiceAgent.ts` orchestrates transcription, guardrail checks, and hand-off back to the manager.
+- Tool calls use OpenAI Speech endpoints (`gpt-4o-mini-transcribe` for STT, `gpt-4o-mini-tts` by default for synthesis) and capture responses in the interaction logs.
+- `ENABLE_VOICE_ECHO` governs whether the original user audio is echoed back as a TTS response.
 
-### 4. Configuration & Environment
-- Document new environment variables (e.g., maximum audio duration, speech model names) in `README.md` and `.env.example` as needed. (Current defaults: `OPENAI_SPEECH_MODEL`, `OPENAI_SPEECH_VOICE`, `OPENAI_SPEECH_FORMAT`.)
-- Provide developer setup instructions for enabling microphone permissions and testing audio playback locally.
+### Frontend Enhancements
+- Audio recorder/upload controls live in the React chat UI (`web/src/components/AudioRecorder.tsx` et al.).
+- Playback UI renders transcripts and audio players; falls back to text when TTS is disabled.
+- Attachments flagged as audio trigger voice agent routing automatically.
 
-### 5. Logging & Observability
-- Augment existing logging so audio uploads, transcriptions, and synthesized outputs are captured with agent attribution in the per-interaction log files.
-- Consider optional debug logging to show raw MCP tool payloads when dealing with audio attachments.
+### Configuration & Environment
+- `.env.example` documents all audio-related variables (`ENABLE_TTS_RESPONSES`, `TTS_RESPONSE_AGENTS`, `ENABLE_VOICE_ECHO`, `ENABLE_TRANSCRIPTION_CONFIRMATION`, `OPENAI_SPEECH_MODEL`, `OPENAI_SPEECH_VOICE`, `OPENAI_SPEECH_FORMAT`). Defaults are reflected there and described in the README.
+- Developers must populate `OPENAI_API_KEY`; audio features respect the same key.
 
-### 6. Testing & QA
-- Backend: Jest/Vitest coverage for `audioService`, agent routing decisions, and mock speech API integrations.
-- Frontend: Vite component tests (or Cypress smoke flows) ensuring the recorder, uploader, and playback controls behave across success/failure states.
-- Manual scenario checklist covering upload-only, record-only, combined audio+text messages, and fallback paths when audio features are unavailable.
+### Logging & Observability
+- Audio uploads, transcription attempts, retries, and errors emit `[speechService]` logs to stdout and per-conversation files.
+- Guardrail checks log acceptance/blocks, including transcription confirmation prompts.
+- Future improvement: merge MCP debug logs into the same interaction file (tracked separately).
+
+### Testing & QA
+- Backend: Vitest suites exercise audio service validation, speech service retry logic (with mocks), and guardrail pathways.
+- Frontend: component tests cover recorder state transitions; manual smoke tests verify recording, upload, playback, and TTS toggles.
+- Manual checklist maintained to ensure happy-path and error scenarios behave correctly across browsers.
+
+## Approval Checklist
+- [x] Plan reviewed and updated to reflect implementation.
+- [x] Initial development tasks completed with conventional commits.
+- [x] QA plan executed for current features; follow-up items tracked above.
 
 ## Future Enhancements
 - Integrate FFmpeg-based transcoding in `audioService.transcodeAudio` to normalize sample rates and formats.
