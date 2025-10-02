@@ -1,4 +1,4 @@
-import type { Conversation, UploadedFile } from '../types';
+import type { Conversation, UploadedFile, TokenUsageSnapshot } from '../types';
 
 export interface AgentContext {
   conversation: Conversation;
@@ -17,6 +17,7 @@ export interface AgentResult {
     description?: string;
   };
   handoffUserMessage?: string;
+  usage?: TokenUsageSnapshot;
 }
 
 export interface Agent {

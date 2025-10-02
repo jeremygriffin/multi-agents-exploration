@@ -33,6 +33,7 @@ describe('UsageLimitService', () => {
   });
 
   afterEach(async () => {
+    delete process.env.ENABLE_USAGE_LOGS;
     await rm(tempDir, { recursive: true, force: true });
   });
 
@@ -90,5 +91,40 @@ describe('UsageLimitService', () => {
     });
     expect(blocked.allowed).toBe(false);
     expect(blocked.limitType).toBe('ip');
+  });
+
+  it('records token usage and emits usage entries when enabled', async () => {
+    process.env.ENABLE_USAGE_LOGS = 'true';
+
+    const config: UsageLimitConfig = {
+      perSession: {},
+      perIp: {},
+    };
+
+    const service = new UsageLimitService(tracker, logger, config);
+
+    await service.recordTokens('agent:greeting', {
+      sessionId: 'session-token',
+      conversationId: 'conversation-token',
+    }, {
+      promptTokens: 12,
+      completionTokens: 8,
+      totalTokens: 20,
+      model: 'gpt-4o-mini',
+    });
+
+    const usageSummary = await tracker.getTokenUsage({ sessionId: 'session-token' });
+    expect(usageSummary.session.totalTokens).toBe(20);
+
+    const usageEntries = logger.entries.filter((entry) =>
+      typeof entry === 'object' && entry !== null && (entry as { event?: string }).event === 'usage'
+    );
+    expect(usageEntries.length).toBe(1);
+    expect(usageEntries[0]).toMatchObject({
+      payload: expect.objectContaining({
+        category: 'tokens',
+        origin: 'agent:greeting',
+      }),
+    });
   });
 });

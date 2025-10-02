@@ -61,6 +61,7 @@
    - Extend logs to show usage counts at block time.
    - Emit metrics-style summaries (`usageTracker.dump()` for debugging) when in development mode.
    - Ensure frontend displays friendly error with remaining cooldown information if available.
+   - Capture aggregated OpenAI token usage per session/IP and, when the `ENABLE_USAGE_LOGS` flag is enabled, emit dedicated `usage` log entries showing counters and token deltas for each request.
 
 5. **Testing strategy**
    - Unit tests for session generation/reset flow (front + back).

@@ -1,6 +1,7 @@
 import { OpenAIAgent } from 'openai-agents';
 
 import type { Agent, AgentContext, AgentResult } from './baseAgent';
+import { toTokenUsage } from '../utils/usageUtils';
 
 interface OpenAiTextAgentOptions {
   id: string;
@@ -17,11 +18,14 @@ export class OpenAiTextAgent implements Agent {
 
   protected readonly agent: OpenAIAgent;
 
+  private readonly modelName: string;
+
   constructor(options: OpenAiTextAgentOptions) {
     this.id = options.id;
     this.name = options.name;
+    this.modelName = options.defaultModel ?? 'gpt-4o-mini';
     this.agent = new OpenAIAgent({
-      model: options.defaultModel ?? 'gpt-4o-mini',
+      model: this.modelName,
       temperature: options.temperature ?? 0.5,
       system_instruction: options.systemInstruction,
     });
@@ -40,12 +44,14 @@ export class OpenAiTextAgent implements Agent {
     const prompt = this.buildPrompt(context);
     const result = await this.agent.createChatCompletion(prompt);
     const [choice] = result.choices;
+    const usage = toTokenUsage(result.total_usage, this.modelName);
 
     return {
       content: choice ?? '',
       debug: {
         prompt,
       },
+      ...(usage ? { usage } : {}),
     };
   }
 }

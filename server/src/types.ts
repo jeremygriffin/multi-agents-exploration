@@ -33,6 +33,14 @@ export interface ManagerPlan {
   actions: AgentAction[];
   notes?: string;
   managerSummary?: string;
+  usage?: TokenUsageSnapshot;
+}
+
+export interface TokenUsageSnapshot {
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+  model?: string;
 }
 
 export interface AgentAudioResponse {
@@ -62,7 +70,7 @@ export interface UploadedFile {
 
 export interface ConversationLogEntry {
   timestamp: string;
-  event: 'user_message' | 'manager_plan' | 'agent_response' | 'mcp_tool' | 'guardrail';
+  event: 'user_message' | 'manager_plan' | 'agent_response' | 'mcp_tool' | 'guardrail' | 'usage';
   conversationId: string;
   agent?: AgentId;
   sessionId: string;

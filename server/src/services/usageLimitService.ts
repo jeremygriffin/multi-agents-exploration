@@ -1,6 +1,6 @@
 import type { InteractionLogger } from './interactionLogger';
 import type { UsageTracker, UsageCountContext, UsageRecordContext } from './usageTracker';
-import type { UsageEvent, UsageLimitConfig } from '../types';
+import type { UsageEvent, UsageLimitConfig, TokenUsageSnapshot } from '../types';
 
 const isTestEnvironment = () =>
   process.env.NODE_ENV === 'test' || typeof process.env.VITEST_WORKER_ID !== 'undefined';
@@ -91,6 +91,29 @@ export class UsageLimitService {
     private readonly config: UsageLimitConfig
   ) {}
 
+  private readonly usageLoggingEnabled = process.env.ENABLE_USAGE_LOGS === 'true';
+
+  private async appendUsageLog(
+    context: UsageContext,
+    payload: Record<string, unknown>
+  ): Promise<void> {
+    if (!this.usageLoggingEnabled) {
+      return;
+    }
+
+    const conversationId = context.conversationId ?? context.sessionId;
+
+    await this.logger.append({
+      timestamp: new Date().toISOString(),
+      event: 'usage',
+      conversationId,
+      sessionId: context.sessionId,
+      ...(context.ipAddress ? { ipAddress: context.ipAddress } : {}),
+      agent: 'guardrail',
+      payload,
+    });
+  }
+
   describeLimits(): UsageLimitConfig {
     return this.config;
   }
@@ -127,6 +150,29 @@ export class UsageLimitService {
 
     await this.tracker.record(recordContext);
 
+    await this.appendUsageLog(context, {
+      category: 'event',
+      event,
+      units,
+      allowed: true,
+      session: {
+        count: nextSessionCount,
+        limit: typeof sessionLimit === 'number' ? sessionLimit : null,
+        remaining:
+          typeof sessionLimit === 'number' ? Math.max(sessionLimit - nextSessionCount, 0) : null,
+      },
+      ...(context.ipAddress
+        ? {
+            ip: {
+              count: nextIpCount,
+              limit: typeof ipLimit === 'number' ? ipLimit : null,
+              remaining:
+                typeof ipLimit === 'number' ? Math.max(ipLimit - nextIpCount, 0) : null,
+            },
+          }
+        : {}),
+    });
+
     const decision: UsageDecision = {
       allowed: true,
       event,
@@ -137,6 +183,53 @@ export class UsageLimitService {
     }
 
     return decision;
+  }
+
+  async recordTokens(
+    origin: string,
+    context: UsageContext,
+    usage: TokenUsageSnapshot | undefined,
+    metadata?: Record<string, unknown>
+  ): Promise<void> {
+    if (!usage) {
+      return;
+    }
+
+    if (
+      usage.promptTokens === 0 &&
+      usage.completionTokens === 0 &&
+      usage.totalTokens === 0
+    ) {
+      return;
+    }
+
+    const trackerContext: UsageCountContext = {
+      sessionId: context.sessionId,
+      ...(context.ipAddress ? { ipAddress: context.ipAddress } : {}),
+    };
+
+    const totals = await this.tracker.recordTokens(trackerContext, {
+      promptTokens: usage.promptTokens,
+      completionTokens: usage.completionTokens,
+      totalTokens: usage.totalTokens,
+    });
+
+    const payload: Record<string, unknown> = {
+      category: 'tokens',
+      origin,
+      usage,
+      totals,
+    };
+
+    if (usage.model) {
+      payload.model = usage.model;
+    }
+
+    if (metadata && Object.keys(metadata).length > 0) {
+      payload.metadata = metadata;
+    }
+
+    await this.appendUsageLog(context, payload);
   }
 
   private block(
@@ -172,6 +265,16 @@ export class UsageLimitService {
         limit,
         current,
       },
+    });
+
+    void this.appendUsageLog(context, {
+      category: 'event',
+      event,
+      allowed: false,
+      limitType,
+      limit,
+      current,
+      remaining: Math.max(limit - current, 0),
     });
 
     return {

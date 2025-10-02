@@ -16,7 +16,8 @@ import type { InteractionLogger } from './services/interactionLogger';
 import { InputGuardService } from './services/inputGuardService';
 import type { InputGuardOptions } from './services/inputGuardService';
 import { ResponseGuardService } from './services/responseGuardService';
-import type { UsageLimitService } from './services/usageLimitService';
+import type { UsageLimitService, UsageContext } from './services/usageLimitService';
+import { addTokenUsage } from './utils/usageUtils';
 
 export class Orchestrator {
   private readonly manager: ManagerAgent;
@@ -134,6 +135,12 @@ export class Orchestrator {
       },
     ];
 
+    const usageContextBase: UsageContext = {
+      sessionId,
+      conversationId,
+      ...(ipAddress ? { ipAddress } : {}),
+    };
+
     while (queue.length > 0) {
       const { messageContent, attachments: currentAttachments, source } = queue.shift()!;
 
@@ -217,6 +224,11 @@ export class Orchestrator {
         },
       });
 
+      await this.usageLimits.recordTokens('manager_plan', usageContextBase, plan.usage, {
+        agent: 'manager',
+        source,
+      });
+
       const managerSummary = plan.managerSummary ?? plan.notes;
       if (managerSummary && managerSummary.trim().length > 0) {
         const assistantMessage: ChatMessage = {
@@ -285,6 +297,7 @@ export class Orchestrator {
         });
 
         let finalAgentResult: AgentResult = agentResult;
+        let aggregatedUsage = agentResult.usage;
         let deliverResponse = true;
         let guardInterventionContent: string | undefined;
         const guardLogDetails: Record<string, unknown> = {
@@ -329,6 +342,8 @@ export class Orchestrator {
                 userMessage: retryMessage,
                 ...(currentAttachments ? { attachments: currentAttachments } : {}),
               });
+
+              aggregatedUsage = addTokenUsage(aggregatedUsage, retryResult.usage);
 
               const retryEvaluation = await this.responseGuard.evaluate({
                 conversationId,
@@ -382,6 +397,12 @@ export class Orchestrator {
             guardLogDetails.outcome = 'pass';
           }
         }
+
+        await this.usageLimits.recordTokens(`agent:${action.agent}`, usageContextBase, aggregatedUsage, {
+          agent: action.agent,
+          guardEvaluated: guardLogDetails.evaluated,
+          guardOutcome: guardLogDetails.outcome,
+        });
 
         if (!deliverResponse) {
           const guardContent =
