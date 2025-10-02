@@ -181,18 +181,43 @@ export class Orchestrator {
         ? `Transcribed audio request (treat as typed text). Do not re-route to the voice agent unless new audio is provided.\n\n${baseInput}`
         : baseInput;
 
-      const plan = await this.manager.plan(conversation, managerInput);
+    const plan = await this.manager.plan(conversation, managerInput);
+
+    await this.logger.append({
+      timestamp: new Date().toISOString(),
+      event: 'manager_plan',
+      conversationId,
+      agent: 'manager',
+      payload: {
+        source,
+        ...plan,
+      },
+    });
+
+    const managerSummary = plan.managerSummary ?? plan.notes;
+    if (managerSummary && managerSummary.trim().length > 0) {
+      const assistantMessage: ChatMessage = {
+        id: randomUUID(),
+        role: 'assistant',
+        agent: 'manager',
+        content: managerSummary.trim(),
+        timestamp: Date.now(),
+      };
+
+      conversation.messages = [...conversation.messages, assistantMessage];
+      this.store.upsertConversation(conversation);
 
       await this.logger.append({
-        timestamp: new Date().toISOString(),
-        event: 'manager_plan',
+        timestamp: new Date(assistantMessage.timestamp).toISOString(),
+        event: 'agent_response',
         conversationId,
         agent: 'manager',
         payload: {
+          content: managerSummary.trim(),
           source,
-          ...plan,
         },
       });
+    }
 
       if (typeof plan.notes === 'string' && plan.notes.trim().length > 0) {
         managerNotes = plan.notes.trim();
