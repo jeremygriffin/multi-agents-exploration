@@ -200,16 +200,21 @@ Do not include extra text or commentary.`,
     return `${mins}m`;
   }
 
-  private formatNoMatchResponse(intent: TimeIntent): string {
+  private formatNoMatchResponse(intent: TimeIntent, attemptedQuery?: string | null): string {
+    const suffix =
+      attemptedQuery && attemptedQuery.trim().length > 0
+        ? ` I couldn't find a match for "${attemptedQuery.trim()}". Could you share a nearby larger city, alternate spelling, or additional details?`
+        : '';
+
     switch (intent) {
       case 'sun_times':
-        return 'I could not determine the location to calculate sunrise and sunset. Could you share the city and country?';
+        return `I could not determine the location to calculate sunrise and sunset. Could you share the city and country?${suffix}`.trim();
       case 'moon_times':
-        return 'I could not determine the location to check moonrise or moonset. Could you share the city and country?';
+        return `I could not determine the location to check moonrise or moonset. Could you share the city and country?${suffix}`.trim();
       case 'calendar':
-        return 'I could not determine the location to look up calendar events. Could you share the city and country?';
+        return `I could not determine the location to look up calendar events. Could you share the city and country?${suffix}`.trim();
       default:
-        return 'I could not determine the location. Could you share the city, state/province, and country?';
+        return `I could not determine the location. Could you share the city, state/province, and country?${suffix}`.trim();
     }
   }
 
@@ -528,7 +533,7 @@ Do not include extra text or commentary.`,
 
     if (!payload || payload.matchCount === 0) {
       return {
-        content: this.formatNoMatchResponse(classified.intent),
+        content: this.formatNoMatchResponse(classified.intent, extractedQuery),
         debug: {
           provider: 'mcp',
           rawUserInput,

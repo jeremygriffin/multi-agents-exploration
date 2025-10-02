@@ -81,4 +81,15 @@ describe('TimeHelperAgent formatting helpers', () => {
     const message = helper.formatNoMatchResponse('calendar');
     expect(message).toContain('calendar');
   });
+
+  it('suggests nearby locations when a specific place is not found', () => {
+    const agent = new TimeHelperAgent();
+    const helper = agent as unknown as {
+      formatNoMatchResponse: (intent: string, attemptedQuery?: string) => string;
+    };
+
+    const message = helper.formatNoMatchResponse('sun_times', 'Nevada City, California, United States');
+    expect(message).toContain('Could you share a nearby larger city');
+    expect(message).toContain('Nevada City, California, United States');
+  });
 });
