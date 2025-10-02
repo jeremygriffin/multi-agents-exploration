@@ -6,6 +6,11 @@
 - Layer configurable usage limits that can throttle activity per session and per originating IP across chat, tool usage, and audio operations.
 - Ensure guardrails, logging, and storage subsystems include the session identity so enforcement decisions and audit trails align.
 
+## Implementation status
+- ✅ Phase 1 delivered via `SessionManager`, session-aware conversation store/logging, and a New Session control in the React client.
+- ✅ Phase 2 delivered via `UsageTracker`, `UsageLimitService`, express wiring, and Vitest coverage for limits/service behaviour.
+- ⏳ Phase 3 (future authentication) remains open as originally scoped.
+
 ## Phase 1: Session Identity Foundation
 1. **Session generation & storage**
    - Generate UUID v4 per first visit; persist into browser `localStorage` and attach to every client request header (`x-session-id`).
@@ -56,6 +61,7 @@
    - Extend logs to show usage counts at block time.
    - Emit metrics-style summaries (`usageTracker.dump()` for debugging) when in development mode.
    - Ensure frontend displays friendly error with remaining cooldown information if available.
+   - Capture aggregated OpenAI token usage per session/IP and, when the `ENABLE_USAGE_LOGS` flag is enabled, emit dedicated `usage` log entries showing counters and token deltas for each request.
 
 5. **Testing strategy**
    - Unit tests for session generation/reset flow (front + back).

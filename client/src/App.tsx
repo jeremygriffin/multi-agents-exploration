@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 
-import { createConversation, formatAgentLabel, sendMessage } from './api';
+import { createConversation, formatAgentLabel, resetSession, sendMessage } from './api';
 import type { AgentReply, ChatEntry } from './types';
 import './App.css';
 
@@ -12,6 +12,32 @@ const getEntryId = () => {
 
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 };
+
+const SESSION_STORAGE_KEY = 'multi_agent_session_id';
+
+const ensureSessionId = (): string => {
+  if (typeof window === 'undefined') {
+    return getEntryId();
+  }
+
+  const existing = window.localStorage.getItem(SESSION_STORAGE_KEY);
+  if (existing && existing.length > 0) {
+    return existing;
+  }
+
+  const generated = getEntryId();
+  window.localStorage.setItem(SESSION_STORAGE_KEY, generated);
+  return generated;
+};
+
+const buildInitialMessages = (): ChatEntry[] => [
+  {
+    id: getEntryId(),
+    role: 'note',
+    content: 'Conversation ready. Say hi or ask for a recap, time check, or writing feedback.',
+    agent: 'manager',
+  },
+];
 
 const agentColor = (agent?: AgentReply['agent'] | 'manager'): string => {
   switch (agent) {
@@ -35,6 +61,12 @@ const agentColor = (agent?: AgentReply['agent'] | 'manager'): string => {
 };
 
 const App = () => {
+  const [sessionId, setSessionId] = useState<string | null>(() => {
+    if (typeof window === 'undefined') {
+      return null;
+    }
+    return window.localStorage.getItem(SESSION_STORAGE_KEY);
+  });
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatEntry[]>([]);
   const [input, setInput] = useState('');
@@ -44,35 +76,69 @@ const App = () => {
   const [isRecording, setIsRecording] = useState(false);
   const [recordingError, setRecordingError] = useState<string | null>(null);
   const [recordingSupported, setRecordingSupported] = useState(false);
+  const [isSessionResetting, setIsSessionResetting] = useState(false);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordedChunksRef = useRef<Blob[]>([]);
 
   const canSend = useMemo(
-    () => Boolean(conversationId && (input.trim().length > 0 || attachment) && !isLoading && !isRecording),
-    [conversationId, input, attachment, isLoading, isRecording]
+    () =>
+      Boolean(
+        sessionId &&
+          conversationId &&
+          (input.trim().length > 0 || attachment) &&
+          !isLoading &&
+          !isRecording &&
+          !isSessionResetting
+      ),
+    [sessionId, conversationId, input, attachment, isLoading, isRecording, isSessionResetting]
   );
 
   useEffect(() => {
+    if (!sessionId) {
+      const generated = ensureSessionId();
+      setSessionId(generated);
+    }
+  }, [sessionId]);
+
+  useEffect(() => {
+    if (sessionId && typeof window !== 'undefined') {
+      window.localStorage.setItem(SESSION_STORAGE_KEY, sessionId);
+    }
+  }, [sessionId]);
+
+  useEffect(() => {
+    if (!sessionId || conversationId) {
+      return;
+    }
+
+    let cancelled = false;
+
     const boot = async () => {
       try {
-        const conversation = await createConversation();
+        setError(null);
+        const conversation = await createConversation(sessionId);
+        if (cancelled) {
+          return;
+        }
+        if (conversation.sessionId && conversation.sessionId !== sessionId) {
+          setSessionId(conversation.sessionId);
+        }
         setConversationId(conversation.id);
-        setMessages([
-          {
-            id: getEntryId(),
-            role: 'note',
-            content: 'Conversation ready. Say hi or ask for a recap, time check, or writing feedback.',
-            agent: 'manager',
-          },
-        ]);
+        setMessages(buildInitialMessages());
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to start conversation');
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : 'Failed to start conversation');
+        }
       }
     };
 
     void boot();
-  }, []);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [sessionId, conversationId]);
 
   useEffect(() => {
     const supported =
@@ -161,10 +227,40 @@ const App = () => {
     setAttachment(file);
   };
 
+  const handleNewSession = async () => {
+    if (isRecording) {
+      mediaRecorderRef.current?.stop();
+    }
+
+    setIsSessionResetting(true);
+    setError(null);
+    setRecordingError(null);
+
+    try {
+      const activeSessionId = sessionId ?? ensureSessionId();
+      const response = await resetSession(activeSessionId);
+      const nextId = response.sessionId ?? ensureSessionId();
+
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem(SESSION_STORAGE_KEY, nextId);
+      }
+
+      setSessionId(nextId);
+      setConversationId(null);
+      setMessages(buildInitialMessages());
+      setAttachment(null);
+      setInput('');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to reset session');
+    } finally {
+      setIsSessionResetting(false);
+    }
+  };
+
   const handleSend = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
-    if (!conversationId || (!attachment && input.trim().length === 0)) {
+    if (!sessionId || !conversationId || (!attachment && input.trim().length === 0)) {
       return;
     }
 
@@ -191,7 +287,10 @@ const App = () => {
     setError(null);
 
     try {
-      const response = await sendMessage(conversationId, messageContent, attachment ?? undefined);
+      const response = await sendMessage(sessionId, conversationId, messageContent, attachment ?? undefined);
+      if (response.sessionId && response.sessionId !== sessionId) {
+        setSessionId(response.sessionId);
+      }
       const replies: ChatEntry[] = response.responses.map((reply) => ({
         id: getEntryId(),
         role: 'agent',
@@ -230,7 +329,17 @@ const App = () => {
   return (
     <div className="app-shell">
       <header className="app-header">
-        <h1>Multi-Agent Playground</h1>
+        <div className="app-header-row">
+          <h1>Multi-Agent Playground</h1>
+          <button
+            type="button"
+            className="session-button"
+            onClick={handleNewSession}
+            disabled={isSessionResetting || isLoading}
+          >
+            {isSessionResetting ? 'Resetting…' : 'New Session'}
+          </button>
+        </div>
         <p className="app-subtitle">Greeting · Summarizer · Time Helper · Input Coach · Voice</p>
       </header>
 

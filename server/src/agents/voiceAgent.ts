@@ -11,12 +11,13 @@ import {
 import { transcribeAudio, type TranscriptionError } from '../services/speechService';
 import { synthesizeSpeech, SpeechSynthesisError } from '../services/speechSynthesisService';
 import { ensureStorageDir } from '../utils/fileUtils';
+import type { UsageLimitService } from '../services/usageLimitService';
 
 const isAudioAttachment = (mimetype: string | undefined): boolean =>
   typeof mimetype === 'string' && mimetype.toLowerCase().startsWith('audio/');
 
-const buildTranscriptPlaceholder = (originalName: string): string =>
-  `# Transcript Placeholder\n\n- Source file: ${originalName}\n- Status: Pending transcription integration.\n\n_No automated speech-to-text has been run yet._`;
+const buildTranscriptPlaceholder = (originalName: string, sessionId: string, conversationId: string): string =>
+  `# Transcript Placeholder\n\n- Source file: ${originalName}\n- Session ID: ${sessionId}\n- Conversation ID: ${conversationId}\n- Status: Pending transcription integration.\n\n_No automated speech-to-text has been run yet._`;
 
 const buildTranscriptionFilename = (originalName: string, extension: string): string => {
   const basePart = originalName.split(/[;?#]/)[0] ?? `audio.${extension}`;
@@ -36,7 +37,7 @@ export class VoiceAgent implements Agent {
 
   private readonly echoEnabled: boolean;
 
-  constructor() {
+  constructor(private readonly usageLimits?: UsageLimitService) {
     this.echoEnabled = process.env.ENABLE_VOICE_ECHO === 'true';
   }
 
@@ -48,6 +49,27 @@ export class VoiceAgent implements Agent {
         content: 'I did not receive an audio attachment to process.',
         debug: { attachments: context.attachments?.map((file) => file.mimetype) ?? [] },
       };
+    }
+
+    if (this.usageLimits) {
+      const usageDecision = await this.usageLimits.consume('audio_transcription', {
+        sessionId: context.sessionId,
+        conversationId: context.conversation.id,
+        ...(context.ipAddress ? { ipAddress: context.ipAddress } : {}),
+      });
+
+      if (!usageDecision.allowed) {
+        return {
+          content: usageDecision.message ?? 'Audio transcription limit reached for today.',
+          debug: {
+            reason: 'usage_limit',
+            limitType: usageDecision.limitType,
+            limit: usageDecision.limit,
+            conversationId: context.conversation.id,
+            sessionId: context.sessionId,
+          },
+        } satisfies AgentResult;
+      }
     }
 
     const validation = validateAudioMimeType(attachment.mimetype);
@@ -81,7 +103,7 @@ export class VoiceAgent implements Agent {
       );
       transcriptText = transcription.text;
 
-      const transcriptContent = `# Transcript\n\n${transcriptText}`;
+      const transcriptContent = `# Transcript\n\n- Session ID: ${context.sessionId}\n- Conversation ID: ${context.conversation.id}\n- Source file: ${attachment.originalName}\n\n${transcriptText}`;
       await writeFile(transcriptPath, transcriptContent, 'utf8');
     } catch (error) {
       const typedError = error as TranscriptionError;
@@ -96,7 +118,7 @@ export class VoiceAgent implements Agent {
       }
 
       const detailsNote = JSON.stringify(transcriptionMetadata, null, 2);
-      const transcriptContent = `${buildTranscriptPlaceholder(attachment.originalName)}\n\n_Error: ${transcriptionError}_\n\n${detailsNote ? `Details: ${detailsNote}` : ''}`.trim();
+      const transcriptContent = `${buildTranscriptPlaceholder(attachment.originalName, context.sessionId, context.conversation.id)}\n\n_Error: ${transcriptionError}_\n\n${detailsNote ? `Details: ${detailsNote}` : ''}`.trim();
       await writeFile(transcriptPath, transcriptContent, 'utf8');
     }
 
@@ -133,6 +155,8 @@ export class VoiceAgent implements Agent {
           rateLimitHit,
           synthesisError,
           echoEnabled: this.echoEnabled,
+          sessionId: context.sessionId,
+          conversationId: context.conversation.id,
         },
       };
 
@@ -183,6 +207,8 @@ export class VoiceAgent implements Agent {
         synthesisMetadata,
         synthesisError,
         echoEnabled: this.echoEnabled,
+        sessionId: context.sessionId,
+        conversationId: context.conversation.id,
       },
       handoffUserMessage: transcriptText,
     };

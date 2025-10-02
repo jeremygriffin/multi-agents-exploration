@@ -1,28 +1,48 @@
 import { Router } from 'express';
+import type { Response } from 'express';
 import multer from 'multer';
 
+import { requireSessionContext } from '../middleware/sessionMiddleware';
 import type { Orchestrator } from '../orchestrator';
 import type { InteractionLogger } from '../services/interactionLogger';
+import type { UsageLimitService, UsageDecision } from '../services/usageLimitService';
+
+const respondWithLimit = (res: Response, decision: UsageDecision) => {
+  const message = decision.message ?? 'Usage limit reached. Please try again later.';
+  return res.status(429).json({ error: message, event: decision.event, scope: decision.limitType });
+};
 
 export const createConversationRouter = (
   orchestrator: Orchestrator,
-  logger: InteractionLogger
+  logger: InteractionLogger,
+  usageLimits: UsageLimitService
 ): Router => {
   const router = Router();
   const upload = multer();
 
-  router.post('/', (_req, res) => {
-    const conversation = orchestrator.createConversation();
-    res.status(201).json({ id: conversation.id, createdAt: conversation.createdAt });
+  router.post('/', (req, res) => {
+    const { sessionId, ipAddress } = requireSessionContext(req);
+    const conversation = orchestrator.createConversation(sessionId, ipAddress);
+    res.status(201).json({
+      id: conversation.id,
+      createdAt: conversation.createdAt,
+      sessionId: conversation.sessionId,
+    });
   });
 
   router.get('/:conversationId/messages', (req, res) => {
     const { conversationId } = req.params as { conversationId: string };
+    const { sessionId } = requireSessionContext(req);
 
     const conversation = orchestrator.getConversation(conversationId);
 
     if (!conversation) {
       res.status(404).json({ error: 'Conversation not found' });
+      return;
+    }
+
+    if (conversation.sessionId !== sessionId) {
+      res.status(403).json({ error: 'Conversation does not belong to the active session' });
       return;
     }
 
@@ -33,6 +53,7 @@ export const createConversationRouter = (
     try {
       const { conversationId } = req.params as { conversationId: string };
       const { content } = req.body as { content?: string };
+      const { sessionId, ipAddress } = requireSessionContext(req);
 
       if (!content) {
         res.status(400).json({ error: 'Message content is required' });
@@ -43,6 +64,18 @@ export const createConversationRouter = (
 
       if (trimmed.length === 0) {
         res.status(400).json({ error: 'Message content is required' });
+        return;
+      }
+
+      const conversation = orchestrator.getConversation(conversationId);
+
+      if (!conversation) {
+        res.status(404).json({ error: 'Conversation not found' });
+        return;
+      }
+
+      if (conversation.sessionId !== sessionId) {
+        res.status(403).json({ error: 'Conversation does not belong to the active session' });
         return;
       }
 
@@ -57,13 +90,50 @@ export const createConversationRouter = (
           ]
         : undefined;
 
+      const messageDecision = await usageLimits.consume('message', {
+        sessionId,
+        conversationId,
+        ...(ipAddress ? { ipAddress } : {}),
+      });
+
+      if (!messageDecision.allowed) {
+        respondWithLimit(res, messageDecision);
+        return;
+      }
+
+      if (attachments && attachments.length > 0) {
+        const fileDecision = await usageLimits.consume('file_upload', {
+          sessionId,
+          conversationId,
+          units: attachments.length,
+          ...(ipAddress ? { ipAddress } : {}),
+        });
+
+        if (!fileDecision.allowed) {
+          respondWithLimit(res, fileDecision);
+          return;
+        }
+      }
+
       const result = await orchestrator.handleUserMessage(
         conversationId,
+        sessionId,
         trimmed,
-        attachments ? { attachments } : undefined
+        {
+          ...(attachments ? { attachments } : {}),
+          ...(ipAddress ? { ipAddress } : {}),
+        }
       );
-      res.json(result);
+      res.json({
+        ...result,
+        sessionId,
+      });
     } catch (error) {
+      if (error instanceof Error && error.message.includes('does not belong to session')) {
+        res.status(403).json({ error: 'Conversation does not belong to the active session' });
+        return;
+      }
+
       next(error);
     }
   });

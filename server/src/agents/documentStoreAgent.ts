@@ -6,6 +6,7 @@ import { OpenAIAgent } from 'openai-agents';
 
 import type { Agent, AgentContext, AgentResult } from './baseAgent';
 import { ensureStorageDir, buildStoredFilename } from '../utils/fileUtils';
+import { toTokenUsage } from '../utils/usageUtils';
 
 const MAX_SUMMARY_INPUT = 6000; // characters
 
@@ -31,7 +32,9 @@ const extractText = async (buffer: Buffer, mimetype: string, originalName: strin
   return null;
 };
 
-const summarizeText = async (text: string): Promise<string> => {
+const summarizeText = async (
+  text: string
+): Promise<{ summary: string; usage?: ReturnType<typeof toTokenUsage> }> => {
   const agent = new OpenAIAgent({
     model: 'gpt-4o-mini',
     temperature: 0.4,
@@ -43,7 +46,10 @@ const summarizeText = async (text: string): Promise<string> => {
 
 ${trimmed}`;
   const result = await agent.createChatCompletion(prompt);
-  return result.choices[0] ?? 'Summary unavailable.';
+  return {
+    summary: result.choices[0] ?? 'Summary unavailable.',
+    usage: toTokenUsage(result.total_usage, 'gpt-4o-mini'),
+  };
 };
 
 const readableSize = (size: number): string => {
@@ -81,11 +87,14 @@ export class DocumentStoreAgent implements Agent {
     const text = await extractText(attachment.buffer, attachment.mimetype, attachment.originalName);
 
     let summary = 'Summary unavailable for this file type.';
+    let usage: ReturnType<typeof toTokenUsage> = undefined;
     if (text && text.trim().length > 0) {
-      summary = await summarizeText(text);
+      const summaryResult = await summarizeText(text);
+      summary = summaryResult.summary;
+      usage = summaryResult.usage ?? usage;
     }
 
-    const analysisContent = `# Document Analysis\n\n- Original filename: ${attachment.originalName}\n- Stored as: ${storedName}\n- MIME type: ${attachment.mimetype}\n- File size: ${readableSize(attachment.size)}\n\n## Summary\n${summary}`;
+    const analysisContent = `# Document Analysis\n\n- Original filename: ${attachment.originalName}\n- Stored as: ${storedName}\n- MIME type: ${attachment.mimetype}\n- File size: ${readableSize(attachment.size)}\n- Session ID: ${context.sessionId}\n- Conversation ID: ${context.conversation.id}\n\n## Summary\n${summary}`;
 
     const analysisName = `${storedName}.analyse.md`;
     const analysisPath = join(storageDir, analysisName);
@@ -99,7 +108,10 @@ export class DocumentStoreAgent implements Agent {
         mimetype: attachment.mimetype,
         size: attachment.size,
         summary,
+        sessionId: context.sessionId,
+        conversationId: context.conversation.id,
       },
+      ...(usage ? { usage } : {}),
     };
   }
 }

@@ -1,9 +1,11 @@
-import type { Conversation, UploadedFile } from '../types';
+import type { Conversation, UploadedFile, TokenUsageSnapshot } from '../types';
 
 export interface AgentContext {
   conversation: Conversation;
   userMessage: string;
   attachments?: UploadedFile[];
+  sessionId: string;
+  ipAddress?: string;
 }
 
 export interface AgentResult {
@@ -15,6 +17,7 @@ export interface AgentResult {
     description?: string;
   };
   handoffUserMessage?: string;
+  usage?: TokenUsageSnapshot;
 }
 
 export interface Agent {

@@ -34,8 +34,10 @@ describe('InputGuardService', () => {
 
   const buildOptions = (overrides?: Partial<InputGuardOptions>): InputGuardOptions => ({
     conversationId: 'conversation-123',
+    sessionId: overrides?.sessionId ?? 'session-123',
     message: overrides?.message ?? 'Hello world',
     source: overrides?.source ?? 'initial',
+    ...(overrides?.ipAddress ? { ipAddress: overrides.ipAddress } : {}),
     ...(overrides?.attachments ? { attachments: overrides.attachments } : {}),
   });
 

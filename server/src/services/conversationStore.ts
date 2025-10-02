@@ -5,11 +5,13 @@ import type { ChatMessage, Conversation } from '../types';
 export class ConversationStore {
   private readonly conversations = new Map<string, Conversation>();
 
-  createConversation(): Conversation {
+  createConversation(sessionId: string, ipAddress?: string): Conversation {
     const id = randomUUID();
     const conversation: Conversation = {
       id,
       createdAt: Date.now(),
+      sessionId,
+      ...(ipAddress ? { ipAddress } : {}),
       messages: [],
     };
 

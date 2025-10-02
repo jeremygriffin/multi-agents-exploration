@@ -1,6 +1,7 @@
 import { OpenAIAgent } from 'openai-agents';
 
 import type { Conversation, ManagerPlan } from '../types';
+import { toTokenUsage } from '../utils/usageUtils';
 
 export class ManagerAgent {
   private readonly agent: OpenAIAgent;
@@ -41,6 +42,7 @@ Only include agents that materially advance the conversation. Prefer greeting ag
     });
 
     const [choice] = result.choices;
+    const usage = toTokenUsage(result.total_usage, 'gpt-4o-mini');
 
     try {
       const parsed = JSON.parse(choice ?? '{}') as Partial<ManagerPlan>;
@@ -52,9 +54,16 @@ Only include agents that materially advance the conversation. Prefer greeting ag
         plan.notes = parsed.notes.trim();
       }
 
+      if (usage) {
+        plan.usage = usage;
+      }
+
       return plan;
     } catch (error) {
-      return { actions: [] };
+      return {
+        actions: [],
+        ...(usage ? { usage } : {}),
+      } satisfies ManagerPlan;
     }
   }
 }

@@ -1,4 +1,4 @@
-import { mkdir, appendFile, readFile } from 'fs/promises';
+import { mkdir, appendFile, readFile, readdir } from 'fs/promises';
 import { join } from 'path';
 
 import type { ConversationLogEntry } from '../types';
@@ -13,7 +13,10 @@ export class InteractionLogger {
   async append(entry: ConversationLogEntry): Promise<void> {
     await ensureLogDir();
 
-    const filepath = join(LOG_DIR, `${entry.conversationId}.log`);
+    const filename = entry.sessionId
+      ? `${entry.sessionId}_${entry.conversationId}.log`
+      : `${entry.conversationId}.log`;
+    const filepath = join(LOG_DIR, filename);
     const line = `${JSON.stringify(entry)}\n`;
 
     await appendFile(filepath, line, { encoding: 'utf8' });
@@ -21,7 +24,25 @@ export class InteractionLogger {
 
   async read(conversationId: string, limit = 100): Promise<ConversationLogEntry[]> {
     await ensureLogDir();
-    const filepath = join(LOG_DIR, `${conversationId}.log`);
+    let filepath = join(LOG_DIR, `${conversationId}.log`);
+
+    try {
+      const files = await readdir(LOG_DIR);
+      const matches = files
+        .filter((name) => name.endsWith(`${conversationId}.log`))
+        .sort((a, b) => {
+          const aHasSession = a.includes('_') ? 1 : 0;
+          const bHasSession = b.includes('_') ? 1 : 0;
+          return bHasSession - aHasSession;
+        });
+
+      const latestMatch = matches[0];
+      if (latestMatch) {
+        filepath = join(LOG_DIR, latestMatch);
+      }
+    } catch {
+      // ignore directory read errors; fallback to default path
+    }
 
     try {
       const contents = await readFile(filepath, 'utf8');

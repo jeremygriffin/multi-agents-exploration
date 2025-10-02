@@ -11,6 +11,8 @@ import {
   type CalendarEventsPayload,
 } from '../mcp/locationClient';
 import type { InteractionLogger } from '../services/interactionLogger';
+import type { TokenUsageSnapshot } from '../types';
+import { addTokenUsage, toTokenUsage } from '../utils/usageUtils';
 
 type TimeIntent = 'current_time' | 'sun_times' | 'moon_times' | 'calendar';
 
@@ -311,7 +313,10 @@ Do not include extra text or commentary.`,
     return `Here are the notable events for ${dateLabel} in ${this.buildLocationLabel(match)}:\n${entries}`;
   }
 
-  private async classifyRequest(context: AgentContext, userInput: string): Promise<ClassifiedRequest> {
+  private async classifyRequest(
+    context: AgentContext,
+    userInput: string
+  ): Promise<{ classified: ClassifiedRequest; usage?: TokenUsageSnapshot }> {
     const transcript = context.conversation.messages
       .slice(-4)
       .map((msg) => `${msg.role === 'user' ? 'User' : `Agent(${msg.agent ?? 'assistant'})`}: ${msg.content}`)
@@ -337,6 +342,7 @@ Do not include extra text or commentary.`,
 
     const raw = completion.choices[0] ?? '';
     const parsed = this.parseJsonRecursive(raw);
+    const usage = toTokenUsage(completion.total_usage, 'gpt-4o-mini');
 
     const validIntent = (value: unknown): TimeIntent => {
       switch (value) {
@@ -361,16 +367,22 @@ Do not include extra text or commentary.`,
         : null;
 
       return {
-        intent,
-        location,
-        date,
+        classified: {
+          intent,
+          location,
+          date,
+        },
+        usage,
       };
     }
 
     return {
-      intent: 'current_time',
-      location: null,
-      date: null,
+      classified: {
+        intent: 'current_time',
+        location: null,
+        date: null,
+      },
+      usage,
     };
   }
 
@@ -435,6 +447,7 @@ Do not include extra text or commentary.`,
     });
 
     const choice = completion.choices[0] ?? '';
+    const usage = toTokenUsage(completion.total_usage, 'gpt-4o-mini');
     const toolMessages = (completion.completion_messages ?? []).filter(
       (msg) => msg.role === 'tool'
     );
@@ -460,6 +473,7 @@ Do not include extra text or commentary.`,
         toolPayloads,
         rawToolMessages: toolMessages,
       },
+      ...(usage ? { usage } : {}),
     };
   }
 
@@ -475,10 +489,14 @@ Do not include extra text or commentary.`,
       };
     }
 
-    const classified = await this.classifyRequest(context, rawUserInput);
+    const classification = await this.classifyRequest(context, rawUserInput);
+    let usage = classification.usage;
+    const classified = classification.classified;
 
-    const extractedQuery = classified.location
-      ?? (await this.deriveLocationQuery(context, rawUserInput));
+    const derived = await this.deriveLocationQuery(context, rawUserInput);
+    usage = addTokenUsage(usage, derived.usage);
+
+    const extractedQuery = classified.location ?? derived.location;
 
     if (!extractedQuery) {
       this.logMcpEvent(context, 'error', {
@@ -542,6 +560,7 @@ Do not include extra text or commentary.`,
           payload,
           errorMessage,
         },
+        ...(usage ? { usage } : {}),
       };
     }
 
@@ -555,6 +574,7 @@ Do not include extra text or commentary.`,
           classified,
           payload,
         },
+        ...(usage ? { usage } : {}),
       };
     }
 
@@ -576,6 +596,7 @@ Do not include extra text or commentary.`,
             ...baseDebug,
             reason: 'missing_coordinates',
           },
+          ...(usage ? { usage } : {}),
         };
       }
 
@@ -612,6 +633,7 @@ Do not include extra text or commentary.`,
             ...baseDebug,
             sunError,
           },
+          ...(usage ? { usage } : {}),
         };
       }
 
@@ -628,6 +650,7 @@ Do not include extra text or commentary.`,
           ...baseDebug,
           sunPayload,
         },
+        ...(usage ? { usage } : {}),
       };
     }
 
@@ -639,6 +662,7 @@ Do not include extra text or commentary.`,
             ...baseDebug,
             reason: 'missing_coordinates',
           },
+          ...(usage ? { usage } : {}),
         };
       }
 
@@ -675,6 +699,7 @@ Do not include extra text or commentary.`,
             ...baseDebug,
             moonError,
           },
+          ...(usage ? { usage } : {}),
         };
       }
 
@@ -691,6 +716,7 @@ Do not include extra text or commentary.`,
           ...baseDebug,
           moonPayload,
         },
+        ...(usage ? { usage } : {}),
       };
     }
 
@@ -702,6 +728,7 @@ Do not include extra text or commentary.`,
             ...baseDebug,
             reason: 'missing_iso2',
           },
+          ...(usage ? { usage } : {}),
         };
       }
 
@@ -737,6 +764,7 @@ Do not include extra text or commentary.`,
             ...baseDebug,
             calendarError,
           },
+          ...(usage ? { usage } : {}),
         };
       }
 
@@ -753,6 +781,7 @@ Do not include extra text or commentary.`,
           ...baseDebug,
           calendarPayload,
         },
+        ...(usage ? { usage } : {}),
       };
     }
 
@@ -762,6 +791,7 @@ Do not include extra text or commentary.`,
       debug: {
         ...baseDebug,
       },
+      ...(usage ? { usage } : {}),
     };
   }
 
@@ -778,6 +808,8 @@ Do not include extra text or commentary.`,
       timestamp: new Date().toISOString(),
       event: 'mcp_tool',
       conversationId: context.conversation.id,
+      sessionId: context.sessionId,
+      ...(context.ipAddress ? { ipAddress: context.ipAddress } : {}),
       agent: this.id,
       payload: {
         stage,
@@ -795,7 +827,10 @@ Do not include extra text or commentary.`,
     return (userPortion ?? message).trim();
   }
 
-  private async deriveLocationQuery(context: AgentContext, userInput: string): Promise<string | null> {
+  private async deriveLocationQuery(
+    context: AgentContext,
+    userInput: string
+  ): Promise<{ location: string | null; usage?: TokenUsageSnapshot }> {
     const transcript = context.conversation.messages
       .slice(-4)
       .map((msg) => `${msg.role === 'user' ? 'User' : `Agent(${msg.agent ?? 'assistant'})`}: ${msg.content}`)
@@ -819,15 +854,19 @@ Do not include extra text or commentary.`,
     });
 
     const answer = completion.choices[0]?.trim();
+    const usage = toTokenUsage(completion.total_usage, 'gpt-4o-mini');
     if (!answer) {
-      return null;
+      return { location: null, usage };
     }
 
     const firstLine = answer.split('\n')[0]?.trim();
     if (!firstLine || firstLine.toUpperCase() === 'UNKNOWN') {
-      return null;
+      return { location: null, usage };
     }
 
-    return firstLine.replace(/^Location:\s*/i, '').trim();
+    return {
+      location: firstLine.replace(/^Location:\s*/i, '').trim(),
+      usage,
+    };
   }
 }
