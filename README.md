@@ -88,6 +88,8 @@ Agent identifiers referenced by `TTS_RESPONSE_AGENTS` (and in logs) are:
 - `voice` – processes audio inputs (transcription + optional echo playback).
 - `guardrail` – virtual responder used when safety checks block a request or ask for clarification.
 
+See `docs/AGENTS.md` for a full roster overview, logging expectations, and contribution guidelines.
+
 ## Guardrails
 
 Two safeguard layers run around every interaction and can be tuned via environment variables found in `server/.env.example`:
