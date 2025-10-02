@@ -4,6 +4,8 @@ export interface AgentContext {
   conversation: Conversation;
   userMessage: string;
   attachments?: UploadedFile[];
+  sessionId: string;
+  ipAddress?: string;
 }
 
 export interface AgentResult {

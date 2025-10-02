@@ -15,6 +15,7 @@ export interface AgentAudioPayload {
 export interface CreateConversationResponse {
   id: string;
   createdAt: number;
+  sessionId: string;
 }
 
 export interface AgentReply {
@@ -27,9 +28,11 @@ export interface SendMessageResponse {
   conversation: {
     id: string;
     createdAt: number;
+    sessionId: string;
   };
   responses: AgentReply[];
   managerNotes?: string;
+  sessionId: string;
 }
 
 export interface ChatEntry {
@@ -38,4 +41,10 @@ export interface ChatEntry {
   content: string;
   agent?: AgentId | 'manager';
   audio?: AgentAudioPayload;
+}
+
+export interface ResetSessionResponse {
+  sessionId: string;
+  createdAt: number;
+  lastSeen: number;
 }

@@ -85,7 +85,7 @@ export class DocumentStoreAgent implements Agent {
       summary = await summarizeText(text);
     }
 
-    const analysisContent = `# Document Analysis\n\n- Original filename: ${attachment.originalName}\n- Stored as: ${storedName}\n- MIME type: ${attachment.mimetype}\n- File size: ${readableSize(attachment.size)}\n\n## Summary\n${summary}`;
+    const analysisContent = `# Document Analysis\n\n- Original filename: ${attachment.originalName}\n- Stored as: ${storedName}\n- MIME type: ${attachment.mimetype}\n- File size: ${readableSize(attachment.size)}\n- Session ID: ${context.sessionId}\n- Conversation ID: ${context.conversation.id}\n\n## Summary\n${summary}`;
 
     const analysisName = `${storedName}.analyse.md`;
     const analysisPath = join(storageDir, analysisName);
@@ -99,6 +99,8 @@ export class DocumentStoreAgent implements Agent {
         mimetype: attachment.mimetype,
         size: attachment.size,
         summary,
+        sessionId: context.sessionId,
+        conversationId: context.conversation.id,
       },
     };
   }

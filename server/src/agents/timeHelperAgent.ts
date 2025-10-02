@@ -778,6 +778,8 @@ Do not include extra text or commentary.`,
       timestamp: new Date().toISOString(),
       event: 'mcp_tool',
       conversationId: context.conversation.id,
+      sessionId: context.sessionId,
+      ...(context.ipAddress ? { ipAddress: context.ipAddress } : {}),
       agent: this.id,
       payload: {
         stage,

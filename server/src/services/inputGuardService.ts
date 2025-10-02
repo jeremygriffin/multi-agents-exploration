@@ -22,9 +22,11 @@ const errorLog = (...args: Parameters<typeof console.error>) => {
 
 export interface InputGuardOptions {
   conversationId: string;
+  sessionId: string;
   message: string;
   attachments?: UploadedFile[];
   source: InputGuardSource;
+  ipAddress?: string;
 }
 
 type ModerationCategoryScores = Record<string, number>;
@@ -157,21 +159,30 @@ export class InputGuardService {
     }
   }
 
-  private logGuardEvent(conversationId: string, payload: Record<string, unknown>): void {
+  private logGuardEvent(
+    conversationId: string,
+    sessionId: string,
+    payload: Record<string, unknown>,
+    ipAddress?: string
+  ): void {
     void this.logger.append({
       timestamp: new Date().toISOString(),
       event: 'guardrail',
       conversationId,
+      sessionId,
+      ...(ipAddress ? { ipAddress } : {}),
       agent: 'guardrail',
       payload,
     });
   }
 
   async evaluate(options: InputGuardOptions): Promise<InputGuardResult> {
-    const { conversationId, message, attachments, source } = options;
+    const { conversationId, sessionId, message, attachments, source, ipAddress } = options;
 
     debugLog('[guardrails][input] evaluating', {
       conversationId,
+      sessionId,
+      ipAddress,
       source,
       messageLength: message.length,
       attachmentCount: attachments?.length ?? 0,
@@ -188,7 +199,7 @@ export class InputGuardService {
             limit: this.attachmentLimitBytes,
           });
 
-          this.logGuardEvent(conversationId, {
+          this.logGuardEvent(conversationId, sessionId, {
             stage: 'input',
             disposition: 'blocked',
             reason: 'attachment_size',
@@ -198,7 +209,7 @@ export class InputGuardService {
               size: attachment.size,
               mimetype: attachment.mimetype,
             },
-          });
+          }, ipAddress);
 
           return {
             status: 'blocked',
@@ -220,7 +231,7 @@ export class InputGuardService {
             mimetype: attachment.mimetype,
           });
 
-          this.logGuardEvent(conversationId, {
+          this.logGuardEvent(conversationId, sessionId, {
             stage: 'input',
             disposition: 'blocked',
             reason: 'attachment_type',
@@ -229,7 +240,7 @@ export class InputGuardService {
               name: attachment.originalName,
               mimetype: attachment.mimetype,
             },
-          });
+          }, ipAddress);
 
           return {
             status: 'blocked',
@@ -258,7 +269,7 @@ export class InputGuardService {
             threshold: this.moderationThreshold,
           });
 
-          this.logGuardEvent(conversationId, {
+          this.logGuardEvent(conversationId, sessionId, {
             stage: 'input',
             disposition: 'blocked',
             reason: 'moderation',
@@ -269,7 +280,7 @@ export class InputGuardService {
               categories: result.categories,
               category_scores: result.category_scores,
             },
-          });
+          }, ipAddress);
 
           return {
             status: 'blocked',
@@ -297,13 +308,13 @@ export class InputGuardService {
         length: message.trim().length,
       });
 
-      this.logGuardEvent(conversationId, {
+      this.logGuardEvent(conversationId, sessionId, {
         stage: 'input',
         disposition: 'needs_confirmation',
         reason: 'short_transcription',
         source,
         messageLength: message.trim().length,
-      });
+      }, ipAddress);
 
       return {
         status: 'needs_confirmation',

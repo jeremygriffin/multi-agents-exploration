@@ -40,10 +40,12 @@ export interface ResponseGuardEvaluation {
 
 interface ResponseGuardEvaluateOptions {
   conversationId: string;
+  sessionId: string;
   agentId: Exclude<AgentId, 'manager'>;
   userMessage: string;
   agentResponse: string;
   attempt?: 'initial' | 'retry';
+  ipAddress?: string;
 }
 
 const parseConfiguredAgents = () => {
@@ -96,22 +98,27 @@ Treat a response as acceptable (status "ok") when the agent politely asks for mi
 
   private logGuardEvent(
     conversationId: string,
-    payload: Record<string, unknown>
+    sessionId: string,
+    payload: Record<string, unknown>,
+    ipAddress?: string
   ): void {
     void this.logger.append({
       timestamp: new Date().toISOString(),
       event: 'guardrail',
       conversationId,
+      sessionId,
+      ...(ipAddress ? { ipAddress } : {}),
       agent: 'guardrail',
       payload,
     });
   }
 
   async evaluate(options: ResponseGuardEvaluateOptions): Promise<ResponseGuardEvaluation> {
-    const { conversationId, agentId, userMessage, agentResponse, attempt = 'initial' } = options;
+    const { conversationId, sessionId, agentId, userMessage, agentResponse, attempt = 'initial', ipAddress } = options;
 
     debugLog('[guardrails][response] evaluating', {
       conversationId,
+      sessionId,
       agentId,
       attempt,
     });
@@ -132,14 +139,14 @@ Treat a response as acceptable (status "ok") when the agent politely asks for mi
         parsed = ResponseGuardSchema.parse(JSON.parse(raw));
       } catch (error) {
         errorLog('[guardrails][response] parsing failure', { raw, error });
-        this.logGuardEvent(conversationId, {
+        this.logGuardEvent(conversationId, sessionId, {
           stage: 'response',
           agentId,
           attempt,
           disposition: 'error',
           reason: 'parse_failure',
           raw,
-        });
+        }, ipAddress);
         return {
           status: 'error',
           rawOutput: raw,
@@ -163,7 +170,7 @@ Treat a response as acceptable (status "ok") when the agent politely asks for mi
         evaluation.followUp = parsed.follow_up.trim();
       }
 
-      this.logGuardEvent(conversationId, {
+      this.logGuardEvent(conversationId, sessionId, {
         stage: 'response',
         agentId,
         attempt,
@@ -171,7 +178,7 @@ Treat a response as acceptable (status "ok") when the agent politely asks for mi
         ...(typeof parsed.confidence === 'number' ? { confidence: parsed.confidence } : {}),
         ...(parsed.reason ? { reason: parsed.reason } : {}),
         ...(parsed.follow_up ? { follow_up: parsed.follow_up } : {}),
-      });
+      }, ipAddress);
 
       return evaluation;
     } catch (error) {
@@ -182,14 +189,14 @@ Treat a response as acceptable (status "ok") when the agent politely asks for mi
         error,
       });
 
-      this.logGuardEvent(conversationId, {
+      this.logGuardEvent(conversationId, sessionId, {
         stage: 'response',
         agentId,
         attempt,
         disposition: 'error',
         reason: 'request_failed',
         error,
-      });
+      }, ipAddress);
 
       return {
         status: 'error',

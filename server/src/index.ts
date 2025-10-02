@@ -5,8 +5,13 @@ import path from 'path';
 
 import { Orchestrator } from './orchestrator';
 import { createConversationRouter } from './routes/conversationRoutes';
+import { createSessionRouter } from './routes/sessionRoutes';
+import { createSessionMiddleware } from './middleware/sessionMiddleware';
 import { ConversationStore } from './services/conversationStore';
 import { InteractionLogger } from './services/interactionLogger';
+import { SessionManager } from './services/sessionManager';
+import { UsageTracker } from './services/usageTracker';
+import { UsageLimitService, buildUsageLimitConfigFromEnv } from './services/usageLimitService';
 import { createLocationMcpHandler } from './mcp/locationServer';
 
 const requiredEnv = ['OPENAI_API_KEY'];
@@ -28,9 +33,18 @@ app.all('/mcp/location', (req, res, next) => {
 
 const store = new ConversationStore();
 const logger = new InteractionLogger();
-const orchestrator = new Orchestrator(store, logger);
+const sessions = new SessionManager();
+void sessions.init();
+const usageTracker = new UsageTracker();
+void usageTracker.init();
+const usageLimits = new UsageLimitService(usageTracker, logger, buildUsageLimitConfigFromEnv());
 
-app.use('/api/conversations', createConversationRouter(orchestrator, logger));
+const orchestrator = new Orchestrator(store, logger, usageLimits);
+
+app.use(createSessionMiddleware(sessions));
+
+app.use('/api/sessions', createSessionRouter(sessions));
+app.use('/api/conversations', createConversationRouter(orchestrator, logger, usageLimits));
 
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok' });

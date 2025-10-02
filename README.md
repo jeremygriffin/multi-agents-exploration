@@ -9,6 +9,7 @@ Local playground demonstrating the [OpenAI Agents SDK](https://github.com/openai
 - Extended time helper answers (current time, sunrise/sunset, moonrise/moonset, public holidays) via MCP tools
 - Express backend with per-conversation log files under `server/logs/`
 - Input and response guardrails for moderation, attachment validation, and answer quality checks
+- Session-aware conversations with a "New Session" reset in the UI plus configurable per-session/IP usage limits for messages, uploads, audio transcription, and TTS generation
 - Document storage workflow that saves uploads to `server/storage/` with auto-generated analysis notes
 - React/Vite chat client showing agent attribution, manager notes, and inline audio playback for captured and synthesized voice responses
 - TypeScript across backend and frontend with Vitest coverage for shared helpers
@@ -124,6 +125,11 @@ Use `server/.env` (or shell exports) to override the defaults shown in `server/.
 - `RESPONSE_GUARD_AGENTS` – comma-separated agent IDs to evaluate (default `time_helper`).
 - `RESPONSE_GUARD_RECOVERY` – recovery strategy when a mismatch is detected; allowed values: `clarify`, `retry`, `log_only` (default `clarify`).
 - `RESPONSE_GUARD_MODEL` – language model used by the response guard evaluator (default `gpt-4o-mini`).
+- **Usage limits** (all values are positive integers; set to `0` or omit the variable to disable the corresponding cap):
+  - `USAGE_LIMIT_MESSAGES_PER_SESSION` / `USAGE_LIMIT_MESSAGES_PER_IP` – daily cap on routed text messages (defaults: `200` per session, `400` per IP).
+  - `USAGE_LIMIT_FILE_UPLOADS_PER_SESSION` / `USAGE_LIMIT_FILE_UPLOADS_PER_IP` – daily cap on stored document uploads (defaults: `20` per session, `40` per IP).
+  - `USAGE_LIMIT_AUDIO_TRANSCRIPTIONS_PER_SESSION` / `USAGE_LIMIT_AUDIO_TRANSCRIPTIONS_PER_IP` – daily cap on audio-to-text requests handled by the voice agent (defaults: `50` per session, `80` per IP).
+  - `USAGE_LIMIT_TTS_PER_SESSION` / `USAGE_LIMIT_TTS_PER_IP` – daily cap on synthesized text-to-speech responses (defaults: `200` per session, `400` per IP).
 
 ## Testing & Builds
 - Run tests across workspaces:

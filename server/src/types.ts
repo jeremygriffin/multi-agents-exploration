@@ -20,6 +20,8 @@ export interface Conversation {
   id: string;
   createdAt: number;
   messages: ChatMessage[];
+  sessionId: string;
+  ipAddress?: string;
 }
 
 export interface AgentAction {
@@ -30,6 +32,7 @@ export interface AgentAction {
 export interface ManagerPlan {
   actions: AgentAction[];
   notes?: string;
+  managerSummary?: string;
 }
 
 export interface AgentAudioResponse {
@@ -62,5 +65,30 @@ export interface ConversationLogEntry {
   event: 'user_message' | 'manager_plan' | 'agent_response' | 'mcp_tool' | 'guardrail';
   conversationId: string;
   agent?: AgentId;
+  sessionId: string;
+  ipAddress?: string;
   payload: unknown;
+}
+
+export interface SessionMetadata {
+  id: string;
+  createdAt: number;
+  lastSeen: number;
+  ipAddress?: string;
+  userAgent?: string;
+}
+
+export interface SessionSummary {
+  id: string;
+  createdAt: number;
+  lastSeen: number;
+  expiredAt?: number;
+  ipAddress?: string;
+}
+
+export type UsageEvent = 'message' | 'file_upload' | 'audio_transcription' | 'tts_generation';
+
+export interface UsageLimitConfig {
+  perSession: Partial<Record<UsageEvent, number | undefined>>;
+  perIp: Partial<Record<UsageEvent, number | undefined>>;
 }

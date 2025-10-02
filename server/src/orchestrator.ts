@@ -16,6 +16,7 @@ import type { InteractionLogger } from './services/interactionLogger';
 import { InputGuardService } from './services/inputGuardService';
 import type { InputGuardOptions } from './services/inputGuardService';
 import { ResponseGuardService } from './services/responseGuardService';
+import type { UsageLimitService } from './services/usageLimitService';
 
 export class Orchestrator {
   private readonly manager: ManagerAgent;
@@ -32,7 +33,8 @@ export class Orchestrator {
 
   constructor(
     private readonly store: ConversationStore,
-    private readonly logger: InteractionLogger
+    private readonly logger: InteractionLogger,
+    private readonly usageLimits: UsageLimitService
   ) {
     this.manager = new ManagerAgent();
 
@@ -42,7 +44,7 @@ export class Orchestrator {
       time_helper: new TimeHelperAgent(this.logger),
       input_coach: new InputCoachAgent(),
       document_store: new DocumentStoreAgent(),
-      voice: new VoiceAgent(),
+      voice: new VoiceAgent(this.usageLimits),
     };
 
     this.ttsEnabled = process.env.ENABLE_TTS_RESPONSES === 'true';
@@ -56,8 +58,8 @@ export class Orchestrator {
     this.responseGuard = new ResponseGuardService(this.logger);
   }
 
-  createConversation(): Conversation {
-    const conversation = this.store.createConversation();
+  createConversation(sessionId: string, ipAddress?: string): Conversation {
+    const conversation = this.store.createConversation(sessionId, ipAddress);
     return conversation;
   }
 
@@ -67,14 +69,25 @@ export class Orchestrator {
 
   async handleUserMessage(
     conversationId: string,
+    sessionId: string,
     message: string,
-    options?: { attachments?: UploadedFile[] }
+    options?: { attachments?: UploadedFile[]; ipAddress?: string; source?: 'initial' | 'voice_transcription' }
   ): Promise<HandleMessageResult> {
     const conversation = this.store.getConversation(conversationId);
 
     if (!conversation) {
       throw new Error(`Conversation ${conversationId} not found`);
     }
+
+    if (conversation.sessionId !== sessionId) {
+      throw new Error(`Conversation ${conversationId} does not belong to session ${sessionId}`);
+    }
+
+    if (options?.ipAddress) {
+      conversation.ipAddress = options.ipAddress;
+    }
+
+    const ipAddress = options?.ipAddress ?? conversation.ipAddress;
 
     const userMessage: ChatMessage = {
       id: randomUUID(),
@@ -90,6 +103,8 @@ export class Orchestrator {
       timestamp: new Date(userMessage.timestamp).toISOString(),
       event: 'user_message',
       conversationId,
+      sessionId,
+      ...(ipAddress ? { ipAddress } : {}),
       payload: {
         content: message,
         attachments: options?.attachments?.map((file) => ({
@@ -109,11 +124,13 @@ export class Orchestrator {
       source: 'initial' | 'voice_transcription';
     };
 
+    const initialSource: QueueItem['source'] = options?.source ?? 'initial';
+
     const queue: QueueItem[] = [
       {
         messageContent: message,
         ...(options?.attachments ? { attachments: options.attachments } : {}),
-        source: 'initial',
+        source: initialSource,
       },
     ];
 
@@ -122,8 +139,10 @@ export class Orchestrator {
 
       const guardOptions: InputGuardOptions = {
         conversationId,
+        sessionId,
         message: messageContent,
         source,
+        ...(ipAddress ? { ipAddress } : {}),
         ...(currentAttachments ? { attachments: currentAttachments } : {}),
       };
 
@@ -158,6 +177,8 @@ export class Orchestrator {
           timestamp: new Date(guardMessage.timestamp).toISOString(),
           event: 'agent_response',
           conversationId,
+          sessionId,
+          ...(ipAddress ? { ipAddress } : {}),
           agent: 'guardrail',
           payload: {
             stage: 'input',
@@ -181,43 +202,47 @@ export class Orchestrator {
         ? `Transcribed audio request (treat as typed text). Do not re-route to the voice agent unless new audio is provided.\n\n${baseInput}`
         : baseInput;
 
-    const plan = await this.manager.plan(conversation, managerInput);
-
-    await this.logger.append({
-      timestamp: new Date().toISOString(),
-      event: 'manager_plan',
-      conversationId,
-      agent: 'manager',
-      payload: {
-        source,
-        ...plan,
-      },
-    });
-
-    const managerSummary = plan.managerSummary ?? plan.notes;
-    if (managerSummary && managerSummary.trim().length > 0) {
-      const assistantMessage: ChatMessage = {
-        id: randomUUID(),
-        role: 'assistant',
-        agent: 'manager',
-        content: managerSummary.trim(),
-        timestamp: Date.now(),
-      };
-
-      conversation.messages = [...conversation.messages, assistantMessage];
-      this.store.upsertConversation(conversation);
+      const plan = await this.manager.plan(conversation, managerInput);
 
       await this.logger.append({
-        timestamp: new Date(assistantMessage.timestamp).toISOString(),
-        event: 'agent_response',
+        timestamp: new Date().toISOString(),
+        event: 'manager_plan',
         conversationId,
+        sessionId,
+        ...(ipAddress ? { ipAddress } : {}),
         agent: 'manager',
         payload: {
-          content: managerSummary.trim(),
           source,
+          ...plan,
         },
       });
-    }
+
+      const managerSummary = plan.managerSummary ?? plan.notes;
+      if (managerSummary && managerSummary.trim().length > 0) {
+        const assistantMessage: ChatMessage = {
+          id: randomUUID(),
+          role: 'assistant',
+          agent: 'manager',
+          content: managerSummary.trim(),
+          timestamp: Date.now(),
+        };
+
+        conversation.messages = [...conversation.messages, assistantMessage];
+        this.store.upsertConversation(conversation);
+
+        await this.logger.append({
+          timestamp: new Date(assistantMessage.timestamp).toISOString(),
+          event: 'agent_response',
+          conversationId,
+          sessionId,
+          ...(ipAddress ? { ipAddress } : {}),
+          agent: 'manager',
+          payload: {
+            content: managerSummary.trim(),
+            source,
+          },
+        });
+      }
 
       if (typeof plan.notes === 'string' && plan.notes.trim().length > 0) {
         managerNotes = plan.notes.trim();
@@ -253,6 +278,8 @@ export class Orchestrator {
 
         const agentResult = await agent.handle({
           conversation,
+          sessionId,
+          ...(ipAddress ? { ipAddress } : {}),
           userMessage: delegatedMessage,
           ...(currentAttachments ? { attachments: currentAttachments } : {}),
         });
@@ -270,6 +297,8 @@ export class Orchestrator {
             agentId: action.agent,
             userMessage: messageContent,
             agentResponse: agentResult.content,
+            sessionId,
+            ...(ipAddress ? { ipAddress } : {}),
           });
 
           guardLogDetails.evaluated = true;
@@ -282,6 +311,7 @@ export class Orchestrator {
             // eslint-disable-next-line no-console
             console.log('[guardrails][response] mismatch detected', {
               conversationId,
+              sessionId,
               agent: action.agent,
               strategy,
               reason: evaluation.reason,
@@ -294,6 +324,8 @@ export class Orchestrator {
 
               const retryResult = await agent.handle({
                 conversation,
+                sessionId,
+                ...(ipAddress ? { ipAddress } : {}),
                 userMessage: retryMessage,
                 ...(currentAttachments ? { attachments: currentAttachments } : {}),
               });
@@ -304,6 +336,8 @@ export class Orchestrator {
                 userMessage: messageContent,
                 agentResponse: retryResult.content,
                 attempt: 'retry',
+                sessionId,
+                ...(ipAddress ? { ipAddress } : {}),
               });
 
               guardLogDetails.retry = retryEvaluation;
@@ -375,6 +409,8 @@ export class Orchestrator {
             timestamp: new Date(guardMessage.timestamp).toISOString(),
             event: 'agent_response',
             conversationId,
+            sessionId,
+            ...(ipAddress ? { ipAddress } : {}),
             agent: 'guardrail',
             payload: {
               stage: 'response',
@@ -415,31 +451,50 @@ export class Orchestrator {
         let ttsError: string | undefined;
 
         if (shouldSynthesize) {
-          try {
-            const speech = await synthesizeSpeech(finalAgentResult.content);
-            const stored = await persistAudioBuffer(
-              speech.buffer,
-              `tts-response-${action.agent}.${speech.extension}`
-            );
+          let ttsAllowed = true;
+          const usageDecision = await this.usageLimits.consume('tts_generation', {
+            sessionId,
+            conversationId,
+            ...(ipAddress ? { ipAddress } : {}),
+          });
 
-            responsePayload.audio = {
-              mimeType: speech.mimeType,
-              base64Data: speech.buffer.toString('base64'),
-              description: `Synthesized response (${speech.extension})`,
+          if (!usageDecision.allowed) {
+            ttsAllowed = false;
+            ttsError = usageDecision.message ?? 'Speech synthesis limit reached for today.';
+            ttsMetadata = {
+              blocked: true,
+              limitType: usageDecision.limitType,
+              limit: usageDecision.limit,
             };
+          }
 
-            ttsMetadata = {
-              storedPath: stored.storedPath,
-              extension: speech.extension,
-              mimeType: speech.mimeType,
-              model: (speech.raw as { request?: { model?: string } })?.request?.model,
-              voice: (speech.raw as { request?: { voice?: string } })?.request?.voice,
-            };
-          } catch (error) {
-            ttsError = error instanceof SpeechSynthesisError ? error.message : 'Speech synthesis failed';
-            ttsMetadata = {
-              error: error instanceof SpeechSynthesisError ? error.cause : error,
-            };
+          if (ttsAllowed) {
+            try {
+              const speech = await synthesizeSpeech(finalAgentResult.content);
+              const stored = await persistAudioBuffer(
+                speech.buffer,
+                `tts-response-${action.agent}.${speech.extension}`
+              );
+
+              responsePayload.audio = {
+                mimeType: speech.mimeType,
+                base64Data: speech.buffer.toString('base64'),
+                description: `Synthesized response (${speech.extension})`,
+              };
+
+              ttsMetadata = {
+                storedPath: stored.storedPath,
+                extension: speech.extension,
+                mimeType: speech.mimeType,
+                model: (speech.raw as { request?: { model?: string } })?.request?.model,
+                voice: (speech.raw as { request?: { voice?: string } })?.request?.voice,
+              };
+            } catch (error) {
+              ttsError = error instanceof SpeechSynthesisError ? error.message : 'Speech synthesis failed';
+              ttsMetadata = {
+                error: error instanceof SpeechSynthesisError ? error.cause : error,
+              };
+            }
           }
         }
 
@@ -489,6 +544,8 @@ export class Orchestrator {
           timestamp: new Date(assistantMessage.timestamp).toISOString(),
           event: 'agent_response',
           conversationId,
+          sessionId,
+          ...(ipAddress ? { ipAddress } : {}),
           agent: action.agent,
           payload: logPayload,
         });
@@ -498,6 +555,8 @@ export class Orchestrator {
           action.agent,
           conversation,
           conversationId,
+          sessionId,
+          ipAddress,
           queue
         );
       }
@@ -520,6 +579,8 @@ export class Orchestrator {
     agentId: Exclude<AgentId, 'manager'>,
     conversation: Conversation,
     conversationId: string,
+    sessionId: string,
+    ipAddress: string | undefined,
     queue: Array<{ messageContent: string; attachments?: UploadedFile[]; source: 'initial' | 'voice_transcription' }>
   ): Promise<void> {
     const followUp = agentResult.handoffUserMessage?.trim();
@@ -543,6 +604,8 @@ export class Orchestrator {
       timestamp: new Date(timestamp).toISOString(),
       event: 'user_message',
       conversationId,
+      sessionId,
+      ...(ipAddress ? { ipAddress } : {}),
       payload: {
         content: followUp,
         source: 'voice_transcription',

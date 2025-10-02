@@ -53,6 +53,7 @@ describe('ResponseGuardService', () => {
 
     const result = await service.evaluate({
       conversationId: 'c1',
+      sessionId: 'session-123',
       agentId: 'time_helper',
       userMessage: 'What time is it in Seattle?',
       agentResponse: 'The time in Portland is...'
@@ -76,6 +77,7 @@ describe('ResponseGuardService', () => {
 
     const result = await service.evaluate({
       conversationId: 'c2',
+      sessionId: 'session-123',
       agentId: 'time_helper',
       userMessage: 'question',
       agentResponse: 'answer',
