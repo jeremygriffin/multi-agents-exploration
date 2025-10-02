@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import type { InteractionLogger } from '../interactionLogger';
 import { ResponseGuardService } from '../responseGuardService';
@@ -60,7 +60,8 @@ describe('ResponseGuardService', () => {
 
     expect(result.status).toBe('mismatch');
     expect(result.reason).toContain('Wrong city');
-    expect(logger.entries.at(-1)).toMatchObject({
+    const lastEntry = logger.entries[logger.entries.length - 1];
+    expect(lastEntry).toMatchObject({
       event: 'guardrail',
       payload: expect.objectContaining({
         stage: 'response',
@@ -81,7 +82,8 @@ describe('ResponseGuardService', () => {
     });
 
     expect(result.status).toBe('error');
-    expect(logger.entries.at(-1)).toMatchObject({
+    const lastEntry = logger.entries[logger.entries.length - 1];
+    expect(lastEntry).toMatchObject({
       payload: expect.objectContaining({ reason: 'parse_failure' }),
     });
   });

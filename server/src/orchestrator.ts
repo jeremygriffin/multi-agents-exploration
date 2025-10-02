@@ -14,6 +14,7 @@ import { persistAudioBuffer } from './services/audioService';
 import type { ConversationStore } from './services/conversationStore';
 import type { InteractionLogger } from './services/interactionLogger';
 import { InputGuardService } from './services/inputGuardService';
+import type { InputGuardOptions } from './services/inputGuardService';
 import { ResponseGuardService } from './services/responseGuardService';
 
 export class Orchestrator {
@@ -119,12 +120,14 @@ export class Orchestrator {
     while (queue.length > 0) {
       const { messageContent, attachments: currentAttachments, source } = queue.shift()!;
 
-      const guardResult = await this.inputGuard.evaluate({
+      const guardOptions: InputGuardOptions = {
         conversationId,
         message: messageContent,
-        attachments: currentAttachments,
         source,
-      });
+        ...(currentAttachments ? { attachments: currentAttachments } : {}),
+      };
+
+      const guardResult = await this.inputGuard.evaluate(guardOptions);
 
       if (guardResult.status !== 'allow') {
         const guardMessageContent =

@@ -6,6 +6,7 @@ export default defineConfig({
     environment: 'node',
     globals: true,
     setupFiles: [],
+    pool: 'forks',
     typecheck: {
       tsconfig: './tsconfig.vitest.json',
     },

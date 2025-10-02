@@ -5,6 +5,21 @@ import type { InteractionLogger } from './interactionLogger';
 
 export type InputGuardSource = 'initial' | 'voice_transcription';
 
+const isTestEnvironment = () =>
+  process.env.NODE_ENV === 'test' || typeof process.env.VITEST_WORKER_ID !== 'undefined';
+
+const debugLog = (...args: Parameters<typeof console.log>) => {
+  if (!isTestEnvironment()) {
+    console.log(...args);
+  }
+};
+
+const errorLog = (...args: Parameters<typeof console.error>) => {
+  if (!isTestEnvironment()) {
+    console.error(...args);
+  }
+};
+
 export interface InputGuardOptions {
   conversationId: string;
   message: string;
@@ -12,9 +27,7 @@ export interface InputGuardOptions {
   source: InputGuardSource;
 }
 
-interface ModerationCategoryScores {
-  [category: string]: number;
-}
+type ModerationCategoryScores = Record<string, number>;
 
 interface ModerationResult {
   flagged: boolean;
@@ -22,11 +35,7 @@ interface ModerationResult {
   categories?: Record<string, boolean>;
 }
 
-interface ModerationClient {
-  create: (
-    request: Parameters<OpenAI['moderations']['create']>[0]
-  ) => Promise<{ results: ModerationResult[] }>;
-}
+type ModerationClient = OpenAI['moderations'];
 
 export type InputGuardResultStatus = 'allow' | 'blocked' | 'needs_confirmation';
 
@@ -76,9 +85,8 @@ const parseAttachmentLimit = () => {
   return parsed;
 };
 
-const ensureOpenAIClient = (() => {
+const ensureModerationClient = (() => {
   let client: OpenAI | null = null;
-  let moderation: ModerationClient | null = null;
 
   return () => {
     if (!client) {
@@ -87,11 +95,7 @@ const ensureOpenAIClient = (() => {
       });
     }
 
-    if (!moderation) {
-      moderation = client.moderations;
-    }
-
-    return moderation;
+    return client.moderations;
   };
 })();
 
@@ -105,10 +109,10 @@ export class InputGuardService {
 
   private readonly attachmentLimitBytes = parseAttachmentLimit();
 
-  private moderationClient?: ModerationClient;
+  private readonly moderationClient: ModerationClient | null;
 
   constructor(private readonly logger: InteractionLogger, moderationClient?: ModerationClient) {
-    this.moderationClient = moderationClient;
+    this.moderationClient = moderationClient ?? null;
   }
 
   private async runModeration(text: string): Promise<ModerationResult | null> {
@@ -117,17 +121,36 @@ export class InputGuardService {
     }
 
     try {
-      const client = this.moderationClient ?? ensureOpenAIClient();
+      const client = this.moderationClient ?? ensureModerationClient();
       const response = await client.create({
         model: 'omni-moderation-latest',
         input: text,
       });
 
-      const [result] = response.results;
-      return result ?? null;
+      const [result] = response.results ?? [];
+      if (!result) {
+        return null;
+      }
+
+      const categoryScores = result.category_scores
+        ? Object.fromEntries(
+            Object.entries(result.category_scores).map(([key, value]) => [key, Number(value) || 0])
+          )
+        : undefined;
+
+      const categories = result.categories
+        ? Object.fromEntries(
+            Object.entries(result.categories).map(([key, value]) => [key, Boolean(value)])
+          )
+        : undefined;
+
+      return {
+        flagged: result.flagged,
+        ...(categoryScores ? { category_scores: categoryScores } : {}),
+        ...(categories ? { categories } : {}),
+      } satisfies ModerationResult;
     } catch (error) {
-      // eslint-disable-next-line no-console
-      console.error('[guardrails][input] moderation request failed', {
+      errorLog('[guardrails][input] moderation request failed', {
         error,
       });
       return null;
@@ -147,8 +170,7 @@ export class InputGuardService {
   async evaluate(options: InputGuardOptions): Promise<InputGuardResult> {
     const { conversationId, message, attachments, source } = options;
 
-    // eslint-disable-next-line no-console
-    console.log('[guardrails][input] evaluating', {
+    debugLog('[guardrails][input] evaluating', {
       conversationId,
       source,
       messageLength: message.length,
@@ -159,8 +181,7 @@ export class InputGuardService {
       for (const attachment of attachments) {
         if (attachment.size > this.attachmentLimitBytes) {
           const feedback = `Attachment ${attachment.originalName} is too large. The current limit is ${this.attachmentLimitBytes} bytes.`;
-          // eslint-disable-next-line no-console
-          console.log('[guardrails][input] blocked attachment (size)', {
+          debugLog('[guardrails][input] blocked attachment (size)', {
             conversationId,
             source,
             size: attachment.size,
@@ -193,8 +214,7 @@ export class InputGuardService {
         const normalizedType = attachment.mimetype?.toLowerCase() ?? '';
         if (normalizedType && !ALLOWED_ATTACHMENT_TYPES.has(normalizedType)) {
           const feedback = `Attachment ${attachment.originalName} is not an allowed file type.`;
-          // eslint-disable-next-line no-console
-          console.log('[guardrails][input] blocked attachment (type)', {
+          debugLog('[guardrails][input] blocked attachment (type)', {
             conversationId,
             source,
             mimetype: attachment.mimetype,
@@ -231,8 +251,7 @@ export class InputGuardService {
           Math.max(max, score ?? 0), 0);
 
         if (result.flagged && highestScore >= this.moderationThreshold) {
-          // eslint-disable-next-line no-console
-          console.log('[guardrails][input] blocked by moderation', {
+          debugLog('[guardrails][input] blocked by moderation', {
             conversationId,
             source,
             highestScore,
@@ -272,8 +291,7 @@ export class InputGuardService {
       this.transcriptionConfirmationEnabled &&
       message.trim().length < MIN_TRANSCRIPTION_LENGTH
     ) {
-      // eslint-disable-next-line no-console
-      console.log('[guardrails][input] transcription flagged for confirmation', {
+      debugLog('[guardrails][input] transcription flagged for confirmation', {
         conversationId,
         source,
         length: message.trim().length,

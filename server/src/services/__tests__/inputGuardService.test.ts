@@ -36,7 +36,7 @@ describe('InputGuardService', () => {
     conversationId: 'conversation-123',
     message: overrides?.message ?? 'Hello world',
     source: overrides?.source ?? 'initial',
-    attachments: overrides?.attachments,
+    ...(overrides?.attachments ? { attachments: overrides.attachments } : {}),
   });
 
   it('blocks attachments that exceed the configured size limit', async () => {
@@ -59,7 +59,8 @@ describe('InputGuardService', () => {
 
     expect(result.status).toBe('blocked');
     expect(result.reason).toBe('attachment_size');
-    expect(logger.entries.at(-1)).toMatchObject({
+    const lastEntry = logger.entries[logger.entries.length - 1];
+    expect(lastEntry).toMatchObject({
       event: 'guardrail',
       payload: expect.objectContaining({ reason: 'attachment_size' }),
     });
@@ -105,7 +106,7 @@ describe('InputGuardService', () => {
       }),
     };
 
-    const service = new InputGuardService(logger, moderationClient);
+    const service = new InputGuardService(logger, moderationClient as never);
 
     const result = await service.evaluate(buildOptions({ message: 'Bad content' }));
 
