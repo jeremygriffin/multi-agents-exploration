@@ -6,6 +6,7 @@ import path from 'path';
 import { Orchestrator } from './orchestrator';
 import { createConversationRouter } from './routes/conversationRoutes';
 import { createSessionRouter } from './routes/sessionRoutes';
+import { createVoiceLiveRouter } from './routes/voiceLiveRoutes';
 import { createSessionMiddleware } from './middleware/sessionMiddleware';
 import { ConversationStore } from './services/conversationStore';
 import { InteractionLogger } from './services/interactionLogger';
@@ -13,6 +14,7 @@ import { SessionManager } from './services/sessionManager';
 import { UsageTracker } from './services/usageTracker';
 import { UsageLimitService, buildUsageLimitConfigFromEnv } from './services/usageLimitService';
 import { createLocationMcpHandler } from './mcp/locationServer';
+import { LiveVoiceService } from './services/liveVoiceService';
 
 const requiredEnv = ['OPENAI_API_KEY'];
 const missing = requiredEnv.filter((key) => !process.env[key]);
@@ -38,6 +40,7 @@ void sessions.init();
 const usageTracker = new UsageTracker();
 void usageTracker.init();
 const usageLimits = new UsageLimitService(usageTracker, logger, buildUsageLimitConfigFromEnv());
+const liveVoice = new LiveVoiceService(usageLimits, logger);
 
 const orchestrator = new Orchestrator(store, logger, usageLimits);
 
@@ -45,6 +48,7 @@ app.use(createSessionMiddleware(sessions));
 
 app.use('/api/sessions', createSessionRouter(sessions));
 app.use('/api/conversations', createConversationRouter(orchestrator, logger, usageLimits));
+app.use('/api/voice/live', createVoiceLiveRouter(orchestrator, liveVoice));
 
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok' });

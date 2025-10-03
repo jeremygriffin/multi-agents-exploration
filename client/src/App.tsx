@@ -1,7 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 
-import { createConversation, formatAgentLabel, resetSession, sendMessage } from './api';
+import {
+  createConversation,
+  formatAgentLabel,
+  requestLiveVoiceSession,
+  resetSession,
+  sendMessage,
+} from './api';
 import type { AgentReply, ChatEntry } from './types';
 import './App.css';
 
@@ -14,6 +20,7 @@ const getEntryId = () => {
 };
 
 const SESSION_STORAGE_KEY = 'multi_agent_session_id';
+const LIVE_MODE_FEATURE_ENABLED = import.meta.env.VITE_ENABLE_VOICE_LIVE_MODE === 'true';
 
 const ensureSessionId = (): string => {
   if (typeof window === 'undefined') {
@@ -77,6 +84,9 @@ const App = () => {
   const [recordingError, setRecordingError] = useState<string | null>(null);
   const [recordingSupported, setRecordingSupported] = useState(false);
   const [isSessionResetting, setIsSessionResetting] = useState(false);
+  const [liveModeStatus, setLiveModeStatus] = useState<'idle' | 'connecting' | 'stub'>('idle');
+  const [liveModeMessage, setLiveModeMessage] = useState<string | null>(null);
+  const [liveModeError, setLiveModeError] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordedChunksRef = useRef<Blob[]>([]);
@@ -126,6 +136,9 @@ const App = () => {
         }
         setConversationId(conversation.id);
         setMessages(buildInitialMessages());
+        setLiveModeStatus('idle');
+        setLiveModeMessage(null);
+        setLiveModeError(null);
       } catch (err) {
         if (!cancelled) {
           setError(err instanceof Error ? err.message : 'Failed to start conversation');
@@ -218,6 +231,30 @@ const App = () => {
     }
   };
 
+  const handleEnterLiveMode = async () => {
+    if (!LIVE_MODE_FEATURE_ENABLED) {
+      return;
+    }
+
+    if (!sessionId || !conversationId) {
+      setLiveModeError('Start a conversation before entering live mode.');
+      return;
+    }
+
+    setLiveModeError(null);
+    setLiveModeMessage(null);
+    setLiveModeStatus('connecting');
+
+    try {
+      const response = await requestLiveVoiceSession(sessionId, conversationId);
+      setLiveModeStatus('stub');
+      setLiveModeMessage(response.message);
+    } catch (err) {
+      setLiveModeStatus('idle');
+      setLiveModeError(err instanceof Error ? err.message : 'Failed to start live voice mode');
+    }
+  };
+
   const handleAttachmentSelection = (file: File | null) => {
     if (isRecording) {
       mediaRecorderRef.current?.stop();
@@ -235,6 +272,9 @@ const App = () => {
     setIsSessionResetting(true);
     setError(null);
     setRecordingError(null);
+    setLiveModeStatus('idle');
+    setLiveModeMessage(null);
+    setLiveModeError(null);
 
     try {
       const activeSessionId = sessionId ?? ensureSessionId();
@@ -405,6 +445,16 @@ const App = () => {
                 hidden
               />
             </label>
+            {LIVE_MODE_FEATURE_ENABLED && (
+              <button
+                type="button"
+                className={`live-mode-button${liveModeStatus === 'connecting' ? ' pending' : ''}`}
+                onClick={handleEnterLiveMode}
+                disabled={isLoading || isRecording || isSessionResetting || liveModeStatus === 'connecting'}
+              >
+                {liveModeStatus === 'connecting' ? 'Connecting…' : 'Live talking mode'}
+              </button>
+            )}
             {recordingSupported && (
               <button
                 type="button"
@@ -420,6 +470,10 @@ const App = () => {
             </button>
           </div>
         </form>
+        {LIVE_MODE_FEATURE_ENABLED && liveModeMessage && (
+          <p className="info-message">{liveModeMessage}</p>
+        )}
+        {LIVE_MODE_FEATURE_ENABLED && liveModeError && <p className="error-message">{liveModeError}</p>}
         {recordingError && <p className="error-message">{recordingError}</p>}
         {error && <p className="error-message">{error}</p>}
       </footer>

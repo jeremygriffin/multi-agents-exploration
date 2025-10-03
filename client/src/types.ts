@@ -48,3 +48,9 @@ export interface ResetSessionResponse {
   createdAt: number;
   lastSeen: number;
 }
+
+export interface LiveVoiceSessionResponse {
+  status: 'pending';
+  message: string;
+  notes?: string;
+}

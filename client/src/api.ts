@@ -1,6 +1,7 @@
 import type {
   AgentReply,
   CreateConversationResponse,
+  LiveVoiceSessionResponse,
   ResetSessionResponse,
   SendMessageResponse,
 } from './types';
@@ -83,6 +84,19 @@ export const resetSession = async (sessionId: string): Promise<ResetSessionRespo
   });
 
   return handleResponse<ResetSessionResponse>(response);
+};
+
+export const requestLiveVoiceSession = async (
+  sessionId: string,
+  conversationId: string
+): Promise<LiveVoiceSessionResponse> => {
+  const response = await fetch(`${BASE_URL}/api/voice/live/session`, {
+    method: 'POST',
+    headers: buildJsonHeaders(sessionId),
+    body: JSON.stringify({ conversationId }),
+  });
+
+  return handleResponse<LiveVoiceSessionResponse>(response);
 };
 
 export const formatAgentLabel = (agent: AgentReply['agent'] | 'manager'): string => {
