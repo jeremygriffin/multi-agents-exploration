@@ -22,6 +22,7 @@ interface VoiceModeControls extends VoiceModeState {
   start: () => Promise<void>;
   stop: () => void;
   isBusy: boolean;
+  speak: (text: string) => boolean;
 }
 
 const logTransition = (from: VoiceModeStatus, to: VoiceModeStatus) => {
@@ -41,6 +42,7 @@ export const useVoiceMode = ({ sessionId, conversationId, onTranscript }: VoiceM
   const pendingTranscriptRef = useRef<string | null>(null);
   const pendingFlushTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingCancelRef = useRef<string[]>([]);
+  const pendingSpeechQueueRef = useRef<string[]>([]);
 
   const transition = useCallback(
     (next: VoiceModeStatus) => {
@@ -60,6 +62,7 @@ export const useVoiceMode = ({ sessionId, conversationId, onTranscript }: VoiceM
       pendingFlushTimeoutRef.current = null;
     }
     pendingCancelRef.current = [];
+    pendingSpeechQueueRef.current = [];
     pendingTranscriptRef.current = null;
     dataChannelRef.current?.close();
     dataChannelRef.current = null;
@@ -271,11 +274,7 @@ export const useVoiceMode = ({ sessionId, conversationId, onTranscript }: VoiceM
 
       pc.addEventListener('track', (event) => {
         console.info('[voiceMode] remote track', { kind: event.track.kind });
-        try {
-          event.track.stop();
-        } catch (err) {
-          console.warn('[voiceMode] failed to stop remote track', err);
-        }
+        remote.addTrack(event.track);
       });
 
       const dataChannel = pc.createDataChannel('oai-events');
@@ -290,6 +289,17 @@ export const useVoiceMode = ({ sessionId, conversationId, onTranscript }: VoiceM
               dataChannel.send(JSON.stringify({ type: 'response.cancel', response_id: responseId }));
             } catch (err) {
               console.warn('[voiceMode] failed to flush cancel command', err);
+            }
+          }
+        }
+        if (pendingSpeechQueueRef.current.length > 0) {
+          const queue = [...pendingSpeechQueueRef.current];
+          pendingSpeechQueueRef.current = [];
+          for (const message of queue) {
+            try {
+              dataChannel.send(message);
+            } catch (err) {
+              console.warn('[voiceMode] failed to flush speech command', err);
             }
           }
         }
@@ -397,6 +407,38 @@ export const useVoiceMode = ({ sessionId, conversationId, onTranscript }: VoiceM
 
   const isBusy = useMemo(() => status === 'requesting' || status === 'connecting', [status]);
 
+  const speak = useCallback(
+    (text: string) => {
+      const trimmed = text.trim();
+      if (!trimmed) {
+        return false;
+      }
+
+      const payload = JSON.stringify({
+        type: 'response.create',
+        response: {
+          modalities: ['audio'],
+          instructions: trimmed,
+        },
+      });
+
+      const channel = dataChannelRef.current;
+      if (channel && channel.readyState === 'open') {
+        try {
+          channel.send(payload);
+          return true;
+        } catch (err) {
+          console.warn('[voiceMode] failed to dispatch speech command', err);
+          return false;
+        }
+      }
+
+      pendingSpeechQueueRef.current = [...pendingSpeechQueueRef.current, payload];
+      return true;
+    },
+    []
+  );
+
   return {
     status,
     error,
@@ -405,5 +447,6 @@ export const useVoiceMode = ({ sessionId, conversationId, onTranscript }: VoiceM
     start,
     stop,
     isBusy,
+    speak,
   };
 };

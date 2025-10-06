@@ -82,6 +82,10 @@ const App = () => {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordedChunksRef = useRef<Blob[]>([]);
+  const sendConversationMessageRef = useRef<
+    ((payload: { content: string; attachment?: File; source?: 'initial' | 'voice_transcription' }) => Promise<void>)
+  >(null);
+  const voiceModeRef = useRef<ReturnType<typeof useVoiceMode> | null>(null);
 
   const sendConversationMessage = useCallback(
     async (payload: { content: string; attachment?: File; source?: 'initial' | 'voice_transcription' }) => {
@@ -154,13 +158,32 @@ const App = () => {
 
         setMessages((prev) => [...prev, ...replies, ...managerNote]);
 
-        const audioReply = response.responses.find((reply) => reply.audio);
-        if (audioReply?.audio) {
-          const audioUrl = `data:${audioReply.audio.mimeType};base64,${audioReply.audio.base64Data}`;
-          const playback = new Audio(audioUrl);
-          playback.play().catch((err) => {
-            console.warn('[voiceMode] failed to autoplay agent audio', err);
-          });
+        const combinedTextParts = replies.map((reply) => reply.content).filter((part) => part.trim().length > 0);
+        if (response.managerNotes && response.managerNotes.trim().length > 0) {
+          combinedTextParts.push(response.managerNotes.trim());
+        }
+
+        let spoken = false;
+        if (combinedTextParts.length > 0) {
+          const speakFn = voiceModeRef.current?.speak;
+          if (speakFn) {
+            try {
+              spoken = speakFn(combinedTextParts.join('\n\n'));
+            } catch (err) {
+              console.warn('[voiceMode] failed to queue speech', err);
+            }
+          }
+        }
+
+        if (!spoken) {
+          const audioReply = response.responses.find((reply) => reply.audio);
+          if (audioReply?.audio) {
+            const audioUrl = `data:${audioReply.audio.mimeType};base64,${audioReply.audio.base64Data}`;
+            const playback = new Audio(audioUrl);
+            playback.play().catch((err) => {
+              console.warn('[voiceMode] failed to autoplay agent audio', err);
+            });
+          }
         }
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to send message');
@@ -180,14 +203,22 @@ const App = () => {
     [conversationId, sessionId]
   );
 
-  const handleVoiceTranscript = useCallback(
-    async (transcript: string) => {
-      await sendConversationMessage({ content: transcript, source: 'voice_transcription' });
-    },
-    [sendConversationMessage]
-  );
+  const handleVoiceTranscript = useCallback(async (transcript: string) => {
+    const handler = sendConversationMessageRef.current;
+    if (handler) {
+      await handler({ content: transcript, source: 'voice_transcription' });
+    }
+  }, []);
 
   const voiceMode = useVoiceMode({ sessionId, conversationId, onTranscript: handleVoiceTranscript });
+
+  useEffect(() => {
+    sendConversationMessageRef.current = sendConversationMessage;
+  }, [sendConversationMessage]);
+
+  useEffect(() => {
+    voiceModeRef.current = voiceMode;
+  }, [voiceMode]);
 
   const canSend = useMemo(
     () =>
