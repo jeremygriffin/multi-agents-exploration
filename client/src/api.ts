@@ -3,6 +3,7 @@ import type {
   CreateConversationResponse,
   ResetSessionResponse,
   SendMessageResponse,
+  VoiceSessionResponse,
 } from './types';
 
 const BASE_URL = import.meta.env.VITE_SERVER_BASE_URL ?? 'http://localhost:3001';
@@ -83,6 +84,19 @@ export const resetSession = async (sessionId: string): Promise<ResetSessionRespo
   });
 
   return handleResponse<ResetSessionResponse>(response);
+};
+
+export const createVoiceSession = async (
+  sessionId: string,
+  conversationId: string
+): Promise<VoiceSessionResponse> => {
+  const response = await fetch(`${BASE_URL}/api/voice/sessions`, {
+    method: 'POST',
+    headers: buildJsonHeaders(sessionId),
+    body: JSON.stringify({ conversationId }),
+  });
+
+  return handleResponse<VoiceSessionResponse>(response);
 };
 
 export const formatAgentLabel = (agent: AgentReply['agent'] | 'manager'): string => {

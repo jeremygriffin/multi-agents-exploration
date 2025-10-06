@@ -48,3 +48,19 @@ export interface ResetSessionResponse {
   createdAt: number;
   lastSeen: number;
 }
+
+export interface VoiceSessionGrant {
+  conversationId: string;
+  userSessionId: string;
+  expiresAt: number;
+  realtimeSessionId?: string;
+  model?: string;
+  voice?: string;
+  clientSecret: string;
+  iceServers?: Array<{ urls: string | string[]; username?: string; credential?: string }>;
+  instructions?: string;
+}
+
+export interface VoiceSessionResponse {
+  grant: VoiceSessionGrant;
+}

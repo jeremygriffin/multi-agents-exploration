@@ -3,6 +3,7 @@ import type { FormEvent } from 'react';
 
 import { createConversation, formatAgentLabel, resetSession, sendMessage } from './api';
 import type { AgentReply, ChatEntry } from './types';
+import { useVoiceMode } from './useVoiceMode';
 import './App.css';
 
 const getEntryId = () => {
@@ -76,6 +77,8 @@ const App = () => {
   const [isRecording, setIsRecording] = useState(false);
   const [recordingError, setRecordingError] = useState<string | null>(null);
   const [recordingSupported, setRecordingSupported] = useState(false);
+  const voiceMode = useVoiceMode({ sessionId, conversationId });
+  const voiceAudioRef = useRef<HTMLAudioElement | null>(null);
   const [isSessionResetting, setIsSessionResetting] = useState(false);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -89,9 +92,19 @@ const App = () => {
           (input.trim().length > 0 || attachment) &&
           !isLoading &&
           !isRecording &&
-          !isSessionResetting
+          !isSessionResetting &&
+          !voiceMode.isBusy
       ),
-    [sessionId, conversationId, input, attachment, isLoading, isRecording, isSessionResetting]
+    [
+      sessionId,
+      conversationId,
+      input,
+      attachment,
+      isLoading,
+      isRecording,
+      isSessionResetting,
+      voiceMode.isBusy,
+    ]
   );
 
   useEffect(() => {
@@ -156,6 +169,26 @@ const App = () => {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [messages]);
+
+  useEffect(() => {
+    if (!voiceAudioRef.current) {
+      return;
+    }
+    if (voiceMode.remoteStream) {
+      voiceAudioRef.current.srcObject = voiceMode.remoteStream;
+      void voiceAudioRef.current.play().catch((err) => {
+        console.warn('[voiceMode] failed to auto-play remote stream', err);
+      });
+    } else {
+      voiceAudioRef.current.srcObject = null;
+    }
+  }, [voiceMode.remoteStream]);
+
+  useEffect(() => {
+    if (voiceMode.status === 'active') {
+      console.info('[voiceMode] active');
+    }
+  }, [voiceMode.status]);
 
   const handleToggleRecording = async () => {
     if (isRecording) {
@@ -230,6 +263,10 @@ const App = () => {
   const handleNewSession = async () => {
     if (isRecording) {
       mediaRecorderRef.current?.stop();
+    }
+
+    if (voiceMode.status !== 'idle') {
+      voiceMode.stop();
     }
 
     setIsSessionResetting(true);
@@ -339,8 +376,34 @@ const App = () => {
           >
             {isSessionResetting ? 'Resetting…' : 'New Session'}
           </button>
+          <button
+            type="button"
+            className={`session-button voice${voiceMode.status === 'active' ? ' active' : ''}`}
+            onClick={() => {
+              if (voiceMode.status === 'active') {
+                voiceMode.stop();
+              } else {
+                void voiceMode.start();
+              }
+            }}
+            disabled={!conversationId || !sessionId || voiceMode.isBusy || isLoading || isSessionResetting}
+          >
+            {voiceMode.status === 'active'
+              ? 'Stop Voice Mode'
+              : voiceMode.isBusy
+              ? 'Starting Voice…'
+              : 'Start Voice Mode'}
+          </button>
         </div>
         <p className="app-subtitle">Greeting · Summarizer · Time Helper · Input Coach · Voice</p>
+        <div className="voice-status">
+          <span>{`Voice: ${voiceMode.status}`}</span>
+          {voiceMode.grant && (
+            <span className="voice-meta">{`Model: ${voiceMode.grant.model ?? 'default'} · Voice: ${
+              voiceMode.grant.voice ?? 'default'
+            }`}</span>
+          )}
+        </div>
       </header>
 
       <main className="chat-container">
@@ -422,6 +485,8 @@ const App = () => {
         </form>
         {recordingError && <p className="error-message">{recordingError}</p>}
         {error && <p className="error-message">{error}</p>}
+        {voiceMode.error && <p className="error-message">{voiceMode.error}</p>}
+        <audio ref={voiceAudioRef} className="voice-audio" autoPlay hidden />
       </footer>
     </div>
   );
