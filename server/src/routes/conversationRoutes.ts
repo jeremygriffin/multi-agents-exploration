@@ -52,7 +52,7 @@ export const createConversationRouter = (
   router.post('/:conversationId/messages', upload.single('attachment'), async (req, res, next) => {
     try {
       const { conversationId } = req.params as { conversationId: string };
-      const { content } = req.body as { content?: string };
+      const { content, source } = req.body as { content?: string; source?: string };
       const { sessionId, ipAddress } = requireSessionContext(req);
 
       if (!content) {
@@ -65,6 +65,15 @@ export const createConversationRouter = (
       if (trimmed.length === 0) {
         res.status(400).json({ error: 'Message content is required' });
         return;
+      }
+
+      let messageSource: 'initial' | 'voice_transcription' | undefined;
+      if (typeof source === 'string' && source.length > 0) {
+        if (source !== 'initial' && source !== 'voice_transcription') {
+          res.status(400).json({ error: 'Invalid source type' });
+          return;
+        }
+        messageSource = source;
       }
 
       const conversation = orchestrator.getConversation(conversationId);
@@ -122,6 +131,7 @@ export const createConversationRouter = (
         {
           ...(attachments ? { attachments } : {}),
           ...(ipAddress ? { ipAddress } : {}),
+          ...(messageSource ? { source: messageSource } : {}),
         }
       );
       res.json({

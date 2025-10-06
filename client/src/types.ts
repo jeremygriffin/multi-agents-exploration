@@ -49,6 +49,8 @@ export interface ResetSessionResponse {
   lastSeen: number;
 }
 
+export type MessageSource = 'initial' | 'voice_transcription';
+
 export interface VoiceSessionGrant {
   conversationId: string;
   userSessionId: string;

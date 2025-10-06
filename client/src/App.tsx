@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 
 import { createConversation, formatAgentLabel, resetSession, sendMessage } from './api';
@@ -77,12 +77,108 @@ const App = () => {
   const [isRecording, setIsRecording] = useState(false);
   const [recordingError, setRecordingError] = useState<string | null>(null);
   const [recordingSupported, setRecordingSupported] = useState(false);
-  const voiceMode = useVoiceMode({ sessionId, conversationId });
   const voiceAudioRef = useRef<HTMLAudioElement | null>(null);
   const [isSessionResetting, setIsSessionResetting] = useState(false);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordedChunksRef = useRef<Blob[]>([]);
+
+  const sendConversationMessage = useCallback(
+    async (payload: { content: string; attachment?: File; source?: 'initial' | 'voice_transcription' }) => {
+      if (!sessionId || !conversationId) {
+        return;
+      }
+
+      const normalizedContent = payload.content.trim();
+
+      if (normalizedContent.length === 0) {
+        return;
+      }
+
+      const userEntry: ChatEntry = {
+        id: getEntryId(),
+        role: 'user',
+        content: normalizedContent,
+      };
+
+      const attachmentNote = payload.attachment
+        ? [{
+            id: getEntryId(),
+            role: 'note' as const,
+            content: `Attached file: ${payload.attachment.name}`,
+            agent: 'manager' as const,
+          }]
+        : [];
+
+      const voiceNote =
+        payload.source === 'voice_transcription'
+          ? [
+              {
+                id: getEntryId(),
+                role: 'note' as const,
+                content: 'Voice transcript captured.',
+                agent: 'voice' as const,
+              } satisfies ChatEntry,
+            ]
+          : [];
+
+      setMessages((prev) => [...prev, userEntry, ...attachmentNote, ...voiceNote]);
+      setIsLoading(true);
+      setError(null);
+
+      try {
+        const response = await sendMessage(sessionId, conversationId, {
+          content: normalizedContent,
+          ...(payload.attachment ? { attachment: payload.attachment } : {}),
+          ...(payload.source ? { source: payload.source } : {}),
+        });
+        if (response.sessionId && response.sessionId !== sessionId) {
+          setSessionId(response.sessionId);
+        }
+        const replies: ChatEntry[] = response.responses.map((reply) => ({
+          id: getEntryId(),
+          role: 'agent',
+          content: reply.content,
+          agent: reply.agent,
+          audio: reply.audio,
+        }));
+
+        const managerNote = response.managerNotes
+          ? [{
+              id: getEntryId(),
+              role: 'note' as const,
+              content: response.managerNotes,
+              agent: 'manager' as const,
+            }]
+          : [];
+
+        setMessages((prev) => [...prev, ...replies, ...managerNote]);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to send message');
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: getEntryId(),
+            role: 'note',
+            content: 'Message failed. Try again.',
+          },
+        ]);
+      } finally {
+        setIsLoading(false);
+        setRecordingError(null);
+      }
+    },
+    [conversationId, sessionId]
+  );
+
+  const handleVoiceTranscript = useCallback(
+    async (transcript: string) => {
+      await sendConversationMessage({ content: transcript, source: 'voice_transcription' });
+    },
+    [sendConversationMessage]
+  );
+
+  const voiceMode = useVoiceMode({ sessionId, conversationId, onTranscript: handleVoiceTranscript });
 
   const canSend = useMemo(
     () =>
@@ -303,64 +399,14 @@ const App = () => {
 
     const trimmed = input.trim();
     const messageContent = trimmed.length > 0 ? trimmed : '[Voice message]';
-    const userEntry: ChatEntry = {
-      id: getEntryId(),
-      role: 'user',
-      content: messageContent,
-    };
-
-    const attachmentNote = attachment
-      ? [{
-          id: getEntryId(),
-          role: 'note' as const,
-          content: `Attached file: ${attachment.name}`,
-          agent: 'manager' as const,
-        }]
-      : [];
-
-    setMessages((prev) => [...prev, userEntry, ...attachmentNote]);
     setInput('');
-    setIsLoading(true);
-    setError(null);
 
-    try {
-      const response = await sendMessage(sessionId, conversationId, messageContent, attachment ?? undefined);
-      if (response.sessionId && response.sessionId !== sessionId) {
-        setSessionId(response.sessionId);
-      }
-      const replies: ChatEntry[] = response.responses.map((reply) => ({
-        id: getEntryId(),
-        role: 'agent',
-        content: reply.content,
-        agent: reply.agent,
-        audio: reply.audio,
-      }));
+    await sendConversationMessage({
+      content: messageContent,
+      ...(attachment ? { attachment } : {}),
+    });
 
-      const managerNote = response.managerNotes
-        ? [{
-            id: getEntryId(),
-            role: 'note' as const,
-            content: response.managerNotes,
-            agent: 'manager' as const,
-          }]
-        : [];
-
-      setMessages((prev) => [...prev, ...replies, ...managerNote]);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to send message');
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: getEntryId(),
-          role: 'note',
-          content: 'Message failed. Try again.',
-        },
-      ]);
-    } finally {
-      setIsLoading(false);
-      setAttachment(null);
-      setRecordingError(null);
-    }
+    setAttachment(null);
   };
 
   return (

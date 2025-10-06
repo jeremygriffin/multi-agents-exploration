@@ -1,6 +1,7 @@
 import type {
   AgentReply,
   CreateConversationResponse,
+  MessageSource,
   ResetSessionResponse,
   SendMessageResponse,
   VoiceSessionResponse,
@@ -46,18 +47,26 @@ export const createConversation = async (sessionId: string): Promise<CreateConve
   return handleResponse<CreateConversationResponse>(response);
 };
 
+interface SendMessagePayload {
+  content: string;
+  attachment?: File;
+  source?: MessageSource;
+}
+
 export const sendMessage = async (
   sessionId: string,
   conversationId: string,
-  content: string,
-  attachment?: File
+  payload: SendMessagePayload
 ): Promise<SendMessageResponse> => {
   const url = `${BASE_URL}/api/conversations/${conversationId}/messages`;
 
-  if (attachment) {
+  if (payload.attachment) {
     const formData = new FormData();
-    formData.append('content', content);
-    formData.append('attachment', attachment);
+    formData.append('content', payload.content);
+    formData.append('attachment', payload.attachment);
+    if (payload.source) {
+      formData.append('source', payload.source);
+    }
 
     const response = await fetch(url, {
       method: 'POST',
@@ -71,7 +80,7 @@ export const sendMessage = async (
   const response = await fetch(url, {
     method: 'POST',
     headers: buildJsonHeaders(sessionId),
-    body: JSON.stringify({ content }),
+    body: JSON.stringify({ content: payload.content, ...(payload.source ? { source: payload.source } : {}) }),
   });
 
   return handleResponse<SendMessageResponse>(response);

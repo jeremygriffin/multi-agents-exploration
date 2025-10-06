@@ -15,6 +15,7 @@ import { UsageLimitService, buildUsageLimitConfigFromEnv } from './services/usag
 import { createLocationMcpHandler } from './mcp/locationServer';
 import { VoiceSessionService } from './services/voiceSessionService';
 import { createVoiceRouter } from './routes/voiceRoutes';
+import { VoiceRealtimeBridge } from './services/voiceRealtimeBridge';
 
 const requiredEnv = ['OPENAI_API_KEY'];
 const missing = requiredEnv.filter((key) => !process.env[key]);
@@ -42,7 +43,8 @@ void usageTracker.init();
 const usageLimits = new UsageLimitService(usageTracker, logger, buildUsageLimitConfigFromEnv());
 
 const orchestrator = new Orchestrator(store, logger, usageLimits);
-const voiceSessions = new VoiceSessionService(orchestrator, logger);
+const bridge = new VoiceRealtimeBridge({ orchestrator, logger, usageLimits });
+const voiceSessions = new VoiceSessionService(orchestrator, logger, bridge);
 
 app.use(createSessionMiddleware(sessions));
 

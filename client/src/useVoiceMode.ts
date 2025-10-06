@@ -8,6 +8,7 @@ export type VoiceModeStatus = 'idle' | 'requesting' | 'connecting' | 'active' | 
 interface VoiceModeOptions {
   sessionId: string | null;
   conversationId: string | null;
+  onTranscript?: (transcript: string) => Promise<void> | void;
 }
 
 interface VoiceModeState {
@@ -27,7 +28,7 @@ const logTransition = (from: VoiceModeStatus, to: VoiceModeStatus) => {
   console.info('[voiceMode] transition', { from, to, at: new Date().toISOString() });
 };
 
-export const useVoiceMode = ({ sessionId, conversationId }: VoiceModeOptions): VoiceModeControls => {
+export const useVoiceMode = ({ sessionId, conversationId, onTranscript }: VoiceModeOptions): VoiceModeControls => {
   const [status, setStatus] = useState<VoiceModeStatus>('idle');
   const [error, setError] = useState<string | null>(null);
   const [grant, setGrant] = useState<VoiceSessionGrant | null>(null);
@@ -35,6 +36,8 @@ export const useVoiceMode = ({ sessionId, conversationId }: VoiceModeOptions): V
   const localStreamRef = useRef<MediaStream | null>(null);
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
   const dataChannelRef = useRef<RTCDataChannel | null>(null);
+  const transcriptBufferRef = useRef('');
+  const textDecoderRef = useRef<TextDecoder | null>(null);
 
   const transition = useCallback(
     (next: VoiceModeStatus) => {
@@ -72,7 +75,69 @@ export const useVoiceMode = ({ sessionId, conversationId }: VoiceModeOptions): V
     localStreamRef.current = null;
 
     setRemoteStream(null);
+    transcriptBufferRef.current = '';
   }, []);
+
+  const emitTranscript = useCallback(
+    (text: string) => {
+      if (!onTranscript) {
+        return;
+      }
+
+      const trimmed = text.trim();
+      if (!trimmed) {
+        return;
+      }
+
+      void (async () => {
+        try {
+          await onTranscript(trimmed);
+        } catch (err) {
+          console.error('[voiceMode] failed to forward transcript', err);
+          setError('Failed to forward voice transcript.');
+        }
+      })();
+    },
+    [onTranscript, setError]
+  );
+
+  const handleRealtimePayload = useCallback(
+    (payload: Record<string, unknown>) => {
+      const event = payload as {
+        type?: unknown;
+        delta?: unknown;
+        transcription?: unknown;
+      };
+
+      const type = typeof event.type === 'string' ? event.type : undefined;
+
+      switch (type) {
+        case 'input_transcription.delta':
+          if (typeof event.delta === 'string') {
+            transcriptBufferRef.current += event.delta;
+          }
+          break;
+        case 'input_transcription.completed': {
+          const finalText =
+            typeof event.transcription === 'string' && event.transcription.trim().length > 0
+              ? event.transcription
+              : transcriptBufferRef.current;
+          transcriptBufferRef.current = '';
+          if (finalText) {
+            emitTranscript(finalText);
+          }
+          break;
+        }
+        case 'input_transcription.failed':
+          transcriptBufferRef.current = '';
+          setError('Realtime transcription failed.');
+          break;
+        default:
+          console.info('[voiceMode] event', type ?? 'unknown', payload);
+      }
+    },
+    [emitTranscript, setError]
+  );
 
   const start = useCallback(async () => {
     if (!sessionId || !conversationId) {
@@ -84,6 +149,7 @@ export const useVoiceMode = ({ sessionId, conversationId }: VoiceModeOptions): V
     try {
       setError(null);
       transition('requesting');
+      transcriptBufferRef.current = '';
 
       const response = await createVoiceSession(sessionId, conversationId);
       setGrant(response.grant);
@@ -122,11 +188,31 @@ export const useVoiceMode = ({ sessionId, conversationId }: VoiceModeOptions): V
         console.info('[voiceMode] data channel closed');
       });
       dataChannel.addEventListener('message', (event) => {
+        const raw = event.data;
+        let text: string | null = null;
+
+        if (typeof raw === 'string') {
+          text = raw;
+        } else if (raw instanceof ArrayBuffer) {
+          const decoder = textDecoderRef.current ?? new TextDecoder();
+          textDecoderRef.current = decoder;
+          text = decoder.decode(raw);
+        } else if (ArrayBuffer.isView(raw)) {
+          const decoder = textDecoderRef.current ?? new TextDecoder();
+          textDecoderRef.current = decoder;
+          text = decoder.decode(raw.buffer);
+        }
+
+        if (!text) {
+          console.info('[voiceMode] unhandled event payload', raw);
+          return;
+        }
+
         try {
-          const payload = JSON.parse(event.data as string);
-          console.info('[voiceMode] event', payload.type ?? 'unknown', payload);
-        } catch {
-          console.info('[voiceMode] raw event', event.data);
+          const parsed = JSON.parse(text) as Record<string, unknown>;
+          handleRealtimePayload(parsed);
+        } catch (err) {
+          console.warn('[voiceMode] failed to parse realtime event', err, text);
         }
       });
 
@@ -168,7 +254,7 @@ export const useVoiceMode = ({ sessionId, conversationId }: VoiceModeOptions): V
       transition('error');
       teardown();
     }
-  }, [conversationId, sessionId, teardown, transition]);
+  }, [conversationId, handleRealtimePayload, sessionId, teardown, transition]);
 
   const stop = useCallback(() => {
     teardown();

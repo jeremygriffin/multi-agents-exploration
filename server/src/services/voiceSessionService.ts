@@ -2,6 +2,7 @@ import type { SessionCreateParams, SessionCreateResponse } from 'openai/resource
 
 import type { Orchestrator } from '../orchestrator';
 import type { InteractionLogger } from './interactionLogger';
+import { VoiceRealtimeBridge } from './voiceRealtimeBridge';
 import { getOpenAIClient } from './speechService';
 import type { VoiceSessionGrant } from '../types';
 
@@ -24,7 +25,8 @@ export class VoiceSessionService {
 
   constructor(
     private readonly orchestrator: Orchestrator,
-    private readonly logger: InteractionLogger
+    private readonly logger: InteractionLogger,
+    private readonly bridge: VoiceRealtimeBridge
   ) {}
 
   async createVoiceSession(options: CreateVoiceSessionOptions): Promise<VoiceSessionGrant> {
@@ -53,6 +55,8 @@ export class VoiceSessionService {
     const modalities = rawModalities.filter((value): value is 'audio' | 'text' => value === 'audio' || value === 'text');
 
     const instructions = process.env.OPENAI_REALTIME_INSTRUCTIONS;
+    const transcriptionModel =
+      process.env.OPENAI_REALTIME_TRANSCRIPTION_MODEL ?? 'gpt-4o-mini-transcribe';
 
     let realtimeSession: SessionCreateResponse;
 
@@ -61,6 +65,9 @@ export class VoiceSessionService {
         model,
         modalities: modalities.length > 0 ? modalities : ['audio', 'text'],
         voice,
+        input_audio_transcription: {
+          model: transcriptionModel,
+        },
         ...(instructions ? { instructions } : {}),
       });
     } catch (error) {
@@ -110,6 +117,12 @@ export class VoiceSessionService {
         voice: grant.voice,
         userAgent,
       },
+    });
+
+    this.bridge.start({
+      conversationId,
+      sessionId,
+      grant,
     });
 
     return grant;
