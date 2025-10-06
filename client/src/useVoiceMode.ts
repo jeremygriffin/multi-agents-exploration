@@ -34,6 +34,7 @@ export const useVoiceMode = ({ sessionId, conversationId }: VoiceModeOptions): V
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
+  const dataChannelRef = useRef<RTCDataChannel | null>(null);
 
   const transition = useCallback(
     (next: VoiceModeStatus) => {
@@ -48,6 +49,9 @@ export const useVoiceMode = ({ sessionId, conversationId }: VoiceModeOptions): V
   );
 
   const teardown = useCallback(() => {
+    dataChannelRef.current?.close();
+    dataChannelRef.current = null;
+
     peerConnectionRef.current?.getSenders().forEach((sender) => {
       try {
         sender.track?.stop();
@@ -86,14 +90,78 @@ export const useVoiceMode = ({ sessionId, conversationId }: VoiceModeOptions): V
 
       transition('connecting');
 
-      // Placeholder: handshake wiring with OpenAI Realtime to be implemented in the next iteration.
-      // eslint-disable-next-line no-console
-      console.info('[voiceMode] received grant', {
-        expiresAt: new Date(response.grant.expiresAt * 1000).toISOString(),
-        realtimeSessionId: response.grant.realtimeSessionId,
-        model: response.grant.model,
-        voice: response.grant.voice,
+      const pc = new RTCPeerConnection({
+        iceServers: response.grant.iceServers,
       });
+      peerConnectionRef.current = pc;
+
+      pc.addEventListener('connectionstatechange', () => {
+        const state = pc.connectionState;
+        console.info('[voiceMode] connection state change', state);
+        if (state === 'failed' || state === 'disconnected' || state === 'closed') {
+          teardown();
+          setError(state === 'closed' ? null : 'Voice connection lost.');
+          transition(state === 'closed' ? 'idle' : 'error');
+        }
+      });
+
+      const remote = new MediaStream();
+      setRemoteStream(remote);
+
+      pc.addEventListener('track', (event) => {
+        console.info('[voiceMode] remote track', { kind: event.track.kind });
+        remote.addTrack(event.track);
+      });
+
+      const dataChannel = pc.createDataChannel('oai-events');
+      dataChannelRef.current = dataChannel;
+      dataChannel.addEventListener('open', () => {
+        console.info('[voiceMode] data channel open');
+      });
+      dataChannel.addEventListener('close', () => {
+        console.info('[voiceMode] data channel closed');
+      });
+      dataChannel.addEventListener('message', (event) => {
+        try {
+          const payload = JSON.parse(event.data as string);
+          console.info('[voiceMode] event', payload.type ?? 'unknown', payload);
+        } catch {
+          console.info('[voiceMode] raw event', event.data);
+        }
+      });
+
+      const localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      localStreamRef.current = localStream;
+      localStream.getTracks().forEach((track) => {
+        pc.addTrack(track, localStream);
+      });
+
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+
+      const baseUrl = 'https://api.openai.com/v1/realtime';
+      const model = response.grant.model ?? 'gpt-4o-realtime-preview';
+      const targetUrl = response.grant.realtimeSessionId
+        ? `${baseUrl}/sessions/${response.grant.realtimeSessionId}/sdp`
+        : `${baseUrl}?model=${encodeURIComponent(model)}`;
+
+      const sdpResponse = await fetch(targetUrl, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${response.grant.clientSecret}`,
+          'Content-Type': 'application/sdp',
+        },
+        body: offer.sdp ?? '',
+      });
+
+      if (!sdpResponse.ok) {
+        const problem = await sdpResponse.text();
+        throw new Error(problem || 'Failed to negotiate realtime session');
+      }
+
+      const answer = await sdpResponse.text();
+      const remoteDescription = new RTCSessionDescription({ type: 'answer', sdp: answer });
+      await pc.setRemoteDescription(remoteDescription);
 
       transition('active');
     } catch (err) {
