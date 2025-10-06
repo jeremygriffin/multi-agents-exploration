@@ -224,11 +224,18 @@ export const useVoiceMode = ({ sessionId, conversationId, onTranscript }: VoiceM
           return;
         }
 
-        try {
-          const parsed = JSON.parse(text) as Record<string, unknown>;
-          handleRealtimePayload(parsed);
-        } catch (err) {
-          console.warn('[voiceMode] failed to parse realtime event', err, text);
+        const chunks = text
+          .split('\n')
+          .map((chunk) => chunk.trim())
+          .filter((chunk) => chunk.length > 0);
+
+        for (const chunk of chunks) {
+          try {
+            const parsed = JSON.parse(chunk) as Record<string, unknown>;
+            handleRealtimePayload(parsed);
+          } catch (err) {
+            console.warn('[voiceMode] failed to parse realtime event', err, chunk);
+          }
         }
       });
 
