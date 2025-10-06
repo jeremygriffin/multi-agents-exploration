@@ -142,20 +142,38 @@ export const useVoiceMode = ({ sessionId, conversationId, onTranscript }: VoiceM
         if (responseId) {
           if (expectedResponseCountRef.current > 0) {
             expectedResponseCountRef.current = Math.max(expectedResponseCountRef.current - 1, 0);
+            console.info('[voiceMode] response.created (expected)', {
+              responseId,
+              remainingExpected: expectedResponseCountRef.current,
+            });
           } else {
             const channel = dataChannelRef.current;
             if (channel && channel.readyState === 'open') {
               try {
                 channel.send(JSON.stringify({ type: 'response.cancel', response_id: responseId }));
+                console.info('[voiceMode] cancelled unsolicited response', { responseId });
               } catch (err) {
                 console.warn('[voiceMode] failed to cancel response', err);
               }
             } else {
               pendingCancelRef.current = [...pendingCancelRef.current, responseId];
+              console.info('[voiceMode] queued cancel for unsolicited response', {
+                responseId,
+                queued: pendingCancelRef.current.length,
+              });
             }
           }
         }
         return;
+      }
+
+      if (type === 'error') {
+        console.error('[voiceMode] realtime error', payload);
+        return;
+      }
+
+      if (typeof type === 'string' && type.startsWith('response.')) {
+        console.info('[voiceMode] response event', type, payload);
       }
 
       if (isInputTranscriptionEvent) {
@@ -306,6 +324,10 @@ export const useVoiceMode = ({ sessionId, conversationId, onTranscript }: VoiceM
                 expectedResponseCountRef.current += 1;
               }
               dataChannel.send(payload);
+              console.info('[voiceMode] flushed queued speech payload', {
+                expectsResponse,
+                expectedResponses: expectedResponseCountRef.current,
+              });
             } catch (err) {
               console.warn('[voiceMode] failed to flush speech command', err);
             }
@@ -419,22 +441,34 @@ export const useVoiceMode = ({ sessionId, conversationId, onTranscript }: VoiceM
     (text: string) => {
       const trimmed = text.trim();
       if (!trimmed) {
+        console.info('[voiceMode] speak skipped (empty)');
         return false;
       }
 
-      const payload = JSON.stringify({
+      const payloadObject = {
         type: 'response.create',
         response: {
           modalities: ['audio'],
           instructions: trimmed,
         },
+      } as const;
+
+      const payload = JSON.stringify(payloadObject);
+      const channel = dataChannelRef.current;
+
+      console.info('[voiceMode] speech enqueue attempt', {
+        snippet: trimmed.slice(0, 120),
+        length: trimmed.length,
+        channelState: channel?.readyState,
       });
 
-      const channel = dataChannelRef.current;
       if (channel && channel.readyState === 'open') {
         try {
           expectedResponseCountRef.current += 1;
           channel.send(payload);
+          console.info('[voiceMode] speech payload sent', {
+            expectedResponses: expectedResponseCountRef.current,
+          });
           return true;
         } catch (err) {
           console.warn('[voiceMode] failed to dispatch speech command', err);
@@ -446,6 +480,9 @@ export const useVoiceMode = ({ sessionId, conversationId, onTranscript }: VoiceM
         ...pendingSpeechQueueRef.current,
         { payload, expectsResponse: true },
       ];
+      console.info('[voiceMode] speech payload queued', {
+        queueSize: pendingSpeechQueueRef.current.length,
+      });
       return true;
     },
     []
