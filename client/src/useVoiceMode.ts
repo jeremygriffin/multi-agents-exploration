@@ -38,6 +38,8 @@ export const useVoiceMode = ({ sessionId, conversationId, onTranscript }: VoiceM
   const dataChannelRef = useRef<RTCDataChannel | null>(null);
   const transcriptBufferRef = useRef('');
   const textDecoderRef = useRef<TextDecoder | null>(null);
+  const pendingTranscriptRef = useRef<string | null>(null);
+  const pendingFlushTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const transition = useCallback(
     (next: VoiceModeStatus) => {
@@ -52,6 +54,11 @@ export const useVoiceMode = ({ sessionId, conversationId, onTranscript }: VoiceM
   );
 
   const teardown = useCallback(() => {
+    if (pendingFlushTimeoutRef.current) {
+      clearTimeout(pendingFlushTimeoutRef.current);
+      pendingFlushTimeoutRef.current = null;
+    }
+    pendingTranscriptRef.current = null;
     dataChannelRef.current?.close();
     dataChannelRef.current = null;
 
@@ -167,8 +174,22 @@ export const useVoiceMode = ({ sessionId, conversationId, onTranscript }: VoiceM
           }
 
           transcriptBufferRef.current = '';
+
           if (finalText && finalText.trim().length > 0) {
-            emitTranscript(finalText);
+            pendingTranscriptRef.current = finalText.trim();
+
+            if (pendingFlushTimeoutRef.current) {
+              clearTimeout(pendingFlushTimeoutRef.current);
+            }
+
+            pendingFlushTimeoutRef.current = setTimeout(() => {
+              const pending = pendingTranscriptRef.current;
+              pendingTranscriptRef.current = null;
+              pendingFlushTimeoutRef.current = null;
+              if (pending) {
+                emitTranscript(pending);
+              }
+            }, 750);
           }
           return;
         }
