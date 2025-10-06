@@ -1,6 +1,7 @@
 import { randomUUID } from 'crypto';
 
 import type { Orchestrator } from '../orchestrator';
+import type { ConversationLogEntry } from '../types';
 import type { UsageLimitService } from './usageLimitService';
 import type { InteractionLogger } from './interactionLogger';
 import {
@@ -443,17 +444,34 @@ export class LiveVoiceService {
     request: LiveVoiceSessionRequest,
     payload: Record<string, unknown>
   ): Promise<void> {
-    await this.logger.append({
+    const logEntry = {
       timestamp: new Date().toISOString(),
-      event: 'agent_response',
+      event: 'agent_response' as const,
       conversationId: request.conversationId,
       sessionId: request.sessionId,
-      agent: 'voice',
+      agent: 'voice' as const,
       ...(request.ipAddress ? { ipAddress: request.ipAddress } : {}),
       payload: {
         source: 'voice_live',
         ...payload,
       },
+    } satisfies ConversationLogEntry;
+
+    const debugEnabled = process.env.DEBUG_VOICE_LIVE_LOGS === 'true';
+
+    if (debugEnabled) {
+      // eslint-disable-next-line no-console
+      console.debug('[voice-live]', JSON.stringify(logEntry));
+    }
+
+    await this.logger.append({
+      timestamp: logEntry.timestamp,
+      event: logEntry.event,
+      conversationId: logEntry.conversationId,
+      sessionId: logEntry.sessionId,
+      agent: logEntry.agent,
+      ...(logEntry.ipAddress ? { ipAddress: logEntry.ipAddress } : {}),
+      payload: logEntry.payload,
     });
   }
 }
