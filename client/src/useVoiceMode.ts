@@ -107,34 +107,50 @@ export const useVoiceMode = ({ sessionId, conversationId, onTranscript }: VoiceM
         type?: unknown;
         delta?: unknown;
         transcription?: unknown;
+        text?: unknown;
       };
 
       const type = typeof event.type === 'string' ? event.type : undefined;
 
-      switch (type) {
-        case 'input_transcription.delta':
-          if (typeof event.delta === 'string') {
-            transcriptBufferRef.current += event.delta;
-          }
-          break;
-        case 'input_transcription.completed': {
-          const finalText =
-            typeof event.transcription === 'string' && event.transcription.trim().length > 0
-              ? event.transcription
-              : transcriptBufferRef.current;
-          transcriptBufferRef.current = '';
-          if (finalText) {
-            emitTranscript(finalText);
-          }
-          break;
+      const isDeltaEvent =
+        type === 'input_transcription.delta' || type === 'input_audio_buffer.transcription.delta';
+      const isCompletedEvent =
+        type === 'input_transcription.completed' || type === 'input_audio_buffer.transcription.completed';
+      const isFailedEvent =
+        type === 'input_transcription.failed' || type === 'input_audio_buffer.transcription.failed';
+
+      if (isDeltaEvent) {
+        const chunk = typeof event.delta === 'string' ? event.delta : typeof event.text === 'string' ? event.text : '';
+        if (chunk) {
+          transcriptBufferRef.current += chunk;
         }
-        case 'input_transcription.failed':
-          transcriptBufferRef.current = '';
-          setError('Realtime transcription failed.');
-          break;
-        default:
-          console.info('[voiceMode] event', type ?? 'unknown', payload);
+        return;
       }
+
+      if (isCompletedEvent) {
+        const finalTextCandidate =
+          typeof event.transcription === 'string'
+            ? event.transcription
+            : typeof event.text === 'string'
+            ? event.text
+            : undefined;
+        const finalText = finalTextCandidate && finalTextCandidate.trim().length > 0
+          ? finalTextCandidate
+          : transcriptBufferRef.current;
+        transcriptBufferRef.current = '';
+        if (finalText) {
+          emitTranscript(finalText);
+        }
+        return;
+      }
+
+      if (isFailedEvent) {
+        transcriptBufferRef.current = '';
+        setError('Realtime transcription failed.');
+        return;
+      }
+
+      console.info('[voiceMode] event', type ?? 'unknown', payload);
     },
     [emitTranscript, setError]
   );
