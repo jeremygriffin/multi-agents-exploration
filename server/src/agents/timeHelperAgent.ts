@@ -372,7 +372,7 @@ Do not include extra text or commentary.`,
           location,
           date,
         },
-        usage,
+        ...(usage ? { usage } : {}),
       };
     }
 
@@ -382,7 +382,7 @@ Do not include extra text or commentary.`,
         location: null,
         date: null,
       },
-      usage,
+      ...(usage ? { usage } : {}),
     };
   }
 
@@ -856,17 +856,17 @@ Do not include extra text or commentary.`,
     const answer = completion.choices[0]?.trim();
     const usage = toTokenUsage(completion.total_usage, 'gpt-4o-mini');
     if (!answer) {
-      return { location: null, usage };
+      return { location: null, ...(usage ? { usage } : {}) };
     }
 
     const firstLine = answer.split('\n')[0]?.trim();
     if (!firstLine || firstLine.toUpperCase() === 'UNKNOWN') {
-      return { location: null, usage };
+      return { location: null, ...(usage ? { usage } : {}) };
     }
 
     return {
       location: firstLine.replace(/^Location:\s*/i, '').trim(),
-      usage,
+      ...(usage ? { usage } : {}),
     };
   }
 }

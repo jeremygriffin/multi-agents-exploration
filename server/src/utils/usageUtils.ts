@@ -38,18 +38,26 @@ export const mergeTokenUsage = (
     return undefined;
   }
 
-  return filtered.reduce<TokenUsageSnapshot>((accumulator, current, index) => {
-    if (index === 0) {
-      return { ...current };
-    }
+  const first = filtered[0]!;
+  const rest = filtered.slice(1);
+  const result: TokenUsageSnapshot = {
+    promptTokens: first.promptTokens,
+    completionTokens: first.completionTokens,
+    totalTokens: first.totalTokens,
+    ...(typeof first.model === 'string' ? { model: first.model } : {}),
+  };
 
-    return {
-      promptTokens: accumulator.promptTokens + current.promptTokens,
-      completionTokens: accumulator.completionTokens + current.completionTokens,
-      totalTokens: accumulator.totalTokens + current.totalTokens,
-      model: accumulator.model ?? current.model,
-    } satisfies TokenUsageSnapshot;
-  });
+  for (const current of rest) {
+    result.promptTokens += current.promptTokens;
+    result.completionTokens += current.completionTokens;
+    result.totalTokens += current.totalTokens;
+
+    if (typeof result.model !== 'string' && typeof current.model === 'string') {
+      result.model = current.model;
+    }
+  }
+
+  return result;
 };
 
 export const addTokenUsage = (
@@ -64,12 +72,18 @@ export const addTokenUsage = (
     return { ...base };
   }
 
-  return {
+  const combined: TokenUsageSnapshot = {
     promptTokens: base.promptTokens + increment.promptTokens,
     completionTokens: base.completionTokens + increment.completionTokens,
     totalTokens: base.totalTokens + increment.totalTokens,
-    model: base.model ?? increment.model,
-  } satisfies TokenUsageSnapshot;
+  };
+
+  const model = base.model ?? increment.model;
+  if (typeof model === 'string') {
+    combined.model = model;
+  }
+
+  return combined;
 };
 
 export const isTokenUsageDefined = (usage: TokenUsageSnapshot | undefined): usage is TokenUsageSnapshot =>
