@@ -1,9 +1,9 @@
 # Current Plan
 
 ## Voice Live Mode (WebRTC)
-- ✅ Plan documented in `docs/voice_webrtc_plan.md` and initial scaffolding shipped under feature flag.
-- 🛠️ Next: implement OpenAI Realtime handshake (`/api/voice/live/offer`), mint ephemeral keys, and pipe transcript events back into the orchestrator via `LiveVoiceService`.
-- 🔜 After handshake: stream transcripts into the conversation log, then layer live captions/UX polish and automated tests.
+- ✅ Plan documented in `docs/voice_webrtc_plan.md`, handshake routed through `/api/voice/live/offer`, and transcripts stream into the orchestrator under the feature flag.
+- 🛠️ Next: harden transcript parsing/stream teardown, surface live captions in the UI, and add a dedicated teardown endpoint for idle sessions.
+- 🔜 Follow-up with automated coverage (service + client smoke), plus UX polish for reconnect/latency states once the pipeline proves stable.
 
 ## Time Helper Follow-Up
 - ✅ Documented future enhancement in `docs/later_improvements.md`.

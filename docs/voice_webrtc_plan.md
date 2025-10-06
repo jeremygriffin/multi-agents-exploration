@@ -42,6 +42,18 @@ This batch-based pipeline introduces noticeable latency because recording must c
 3. **Agent Integration**: Capture realtime transcript events and convert them into `AgentReply` records so the conversation history includes a summary of the live exchange.
 4. **Polish**: Stream partial transcripts, add metrics/logging, implement graceful reconnect, and expand automated tests.
 
+## Next Implementation Step
+- Expand `/api/voice/live/offer` to accept the browser SDP offer, mint an OpenAI Realtime ephemeral key, forward the offer, and return the SDP answer.
+- Extend `LiveVoiceService` to manage ephemeral-token requests, session bookkeeping, and structured error handling.
+- Stream OpenAI transcript events back into the orchestrator via a live-session helper so chat history reflects the conversation.
+- Replace the client stub with real WebRTC signaling (ICE gathering, offer/answer exchange, remote audio playback) while preserving error states in the UI.
+- Document required env vars (`ENABLE_VOICE_LIVE_MODE`, `VITE_ENABLE_VOICE_LIVE_MODE`, OpenAI credentials), plus add usage-limit hooks and logging for session lifecycle.
+
+## Configuration Checklist
+- **Server**: set `OPENAI_API_KEY`, enable `ENABLE_VOICE_LIVE_MODE=true`, and optionally tune `OPENAI_REALTIME_MODEL`, `OPENAI_REALTIME_VOICE`, `OPENAI_REALTIME_INSTRUCTIONS`, or `OPENAI_REALTIME_MODALITIES` for custom behaviour.
+- **Client**: enable `VITE_ENABLE_VOICE_LIVE_MODE=true` (plus `VITE_SERVER_BASE_URL` when proxying to a remote API) so the UI exposes the live call control.
+- Restart both services after updating env files to ensure new OpenAI credentials and flags are loaded.
+
 ## Testing Strategy
 - Unit tests for new server utilities that call OpenAI's Realtime REST endpoints (mocking network interactions).
 - Browser-level smoke test instructions documenting how to verify the live mode end-to-end.
