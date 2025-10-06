@@ -205,7 +205,7 @@ export class LiveVoiceService {
       throw new Error('Realtime client unavailable. Check server configuration.');
     }
 
-    const answer = await this.realtimeClient.exchangeOffer(stored.clientSecret, {
+    const answer = await this.realtimeClient.exchangeOffer(stored.openAiSessionId, stored.clientSecret, {
       type: request.type ?? 'offer',
       sdp: request.sdp,
     });

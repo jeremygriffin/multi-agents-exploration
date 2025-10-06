@@ -112,8 +112,12 @@ export class OpenAiRealtimeClient {
     };
   }
 
-  async exchangeOffer(clientSecret: string, offer: SessionDescription): Promise<SessionDescription> {
-    const response = await fetch(`${this.baseUrl}/realtime/sdp`, {
+  async exchangeOffer(
+    sessionId: string,
+    clientSecret: string,
+    offer: SessionDescription
+  ): Promise<SessionDescription> {
+    const response = await fetch(`${this.baseUrl}/realtime/sessions/${sessionId}/sdp`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${clientSecret}`,
