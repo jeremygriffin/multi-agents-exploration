@@ -49,8 +49,24 @@ export interface ResetSessionResponse {
   lastSeen: number;
 }
 
+export interface LiveVoiceSessionDetails {
+  id: string;
+  conversationId: string;
+  model: string;
+  iceServers: RTCIceServer[];
+  clientSecretExpiresAt?: number;
+  expiresAt?: number;
+}
+
 export interface LiveVoiceSessionResponse {
-  status: 'pending';
+  status: 'ready';
   message: string;
-  notes?: string;
+  session: LiveVoiceSessionDetails;
+}
+
+export interface LiveVoiceOfferResponse {
+  answer: {
+    type: 'answer';
+    sdp: string;
+  };
 }

@@ -7,8 +7,9 @@ import {
   requestLiveVoiceSession,
   resetSession,
   sendMessage,
+  submitLiveVoiceOffer,
 } from './api';
-import type { AgentReply, ChatEntry } from './types';
+import type { AgentReply, ChatEntry, LiveVoiceSessionDetails } from './types';
 import './App.css';
 
 const getEntryId = () => {
@@ -84,12 +85,17 @@ const App = () => {
   const [recordingError, setRecordingError] = useState<string | null>(null);
   const [recordingSupported, setRecordingSupported] = useState(false);
   const [isSessionResetting, setIsSessionResetting] = useState(false);
-  const [liveModeStatus, setLiveModeStatus] = useState<'idle' | 'connecting' | 'stub'>('idle');
+  const [liveModeStatus, setLiveModeStatus] = useState<'idle' | 'requesting' | 'connecting' | 'connected'>('idle');
   const [liveModeMessage, setLiveModeMessage] = useState<string | null>(null);
   const [liveModeError, setLiveModeError] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordedChunksRef = useRef<Blob[]>([]);
+  const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
+  const liveStreamRef = useRef<MediaStream | null>(null);
+  const remoteStreamRef = useRef<MediaStream | null>(null);
+  const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
+  const liveSessionRef = useRef<LiveVoiceSessionDetails | null>(null);
 
   const canSend = useMemo(
     () =>
@@ -170,6 +176,60 @@ const App = () => {
     }
   }, [messages]);
 
+  const cleanupLiveMode = (options?: { message?: string | null; error?: string | null }) => {
+    peerConnectionRef.current?.getSenders().forEach((sender) => {
+      try {
+        sender.track?.stop();
+      } catch {
+        // ignore sender stop issues
+      }
+    });
+    peerConnectionRef.current?.close();
+    peerConnectionRef.current = null;
+
+    liveStreamRef.current?.getTracks().forEach((track) => track.stop());
+    liveStreamRef.current = null;
+
+    remoteStreamRef.current?.getTracks().forEach((track) => track.stop());
+    remoteStreamRef.current = null;
+
+    if (remoteAudioRef.current) {
+      remoteAudioRef.current.pause();
+      remoteAudioRef.current.srcObject = null;
+    }
+
+    liveSessionRef.current = null;
+    setLiveModeStatus('idle');
+    setLiveModeMessage(options?.message ?? null);
+    setLiveModeError(options?.error ?? null);
+  };
+
+  useEffect(() => () => {
+    cleanupLiveMode();
+  }, []);
+
+  const waitForIceGatheringComplete = (pc: RTCPeerConnection): Promise<void> =>
+    new Promise((resolve) => {
+      if (pc.iceGatheringState === 'complete') {
+        resolve();
+        return;
+      }
+
+      const listener = () => {
+        if (pc.iceGatheringState === 'complete') {
+          pc.removeEventListener('icegatheringstatechange', listener);
+          resolve();
+        }
+      };
+
+      pc.addEventListener('icegatheringstatechange', listener);
+
+      setTimeout(() => {
+        pc.removeEventListener('icegatheringstatechange', listener);
+        resolve();
+      }, 4000);
+    });
+
   const handleToggleRecording = async () => {
     if (isRecording) {
       mediaRecorderRef.current?.stop();
@@ -231,8 +291,18 @@ const App = () => {
     }
   };
 
-  const handleEnterLiveMode = async () => {
+  const handleToggleLiveMode = async () => {
     if (!LIVE_MODE_FEATURE_ENABLED) {
+      return;
+    }
+
+    if (liveModeStatus === 'connected') {
+      cleanupLiveMode({ message: 'Live talking mode exited.' });
+      return;
+    }
+
+    if (liveModeStatus === 'requesting' || liveModeStatus === 'connecting') {
+      cleanupLiveMode({ message: 'Cancelled live talking mode.' });
       return;
     }
 
@@ -241,17 +311,86 @@ const App = () => {
       return;
     }
 
-    setLiveModeError(null);
-    setLiveModeMessage(null);
-    setLiveModeStatus('connecting');
+    if (!recordingSupported) {
+      setLiveModeError('Browser does not support live audio recording.');
+      return;
+    }
 
     try {
-      const response = await requestLiveVoiceSession(sessionId, conversationId);
-      setLiveModeStatus('stub');
-      setLiveModeMessage(response.message);
+      setLiveModeError(null);
+      setLiveModeMessage('Requesting live voice session...');
+      setLiveModeStatus('requesting');
+
+      if (isRecording) {
+        mediaRecorderRef.current?.stop();
+      }
+
+      const sessionResponse = await requestLiveVoiceSession(sessionId, conversationId);
+
+      liveSessionRef.current = sessionResponse.session;
+      setLiveModeMessage(sessionResponse.message);
+
+      setLiveModeStatus('connecting');
+
+      const localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      liveStreamRef.current = localStream;
+
+      const configuration: RTCConfiguration = {
+        iceServers: sessionResponse.session.iceServers,
+      };
+
+      const pc = new RTCPeerConnection(configuration);
+      peerConnectionRef.current = pc;
+
+      const remoteStream = new MediaStream();
+      remoteStreamRef.current = remoteStream;
+
+      pc.addEventListener('track', (event) => {
+        remoteStream.addTrack(event.track);
+        if (remoteAudioRef.current) {
+          remoteAudioRef.current.srcObject = remoteStream;
+          const element = remoteAudioRef.current;
+          void element.play().catch(() => {
+            // Playback will resume once user interacts with the page.
+          });
+        }
+      });
+
+      pc.addEventListener('connectionstatechange', () => {
+        const { connectionState } = pc;
+        if (connectionState === 'connected') {
+          setLiveModeStatus('connected');
+          setLiveModeMessage('Live talking mode is active.');
+        } else if (connectionState === 'failed' || connectionState === 'disconnected') {
+          cleanupLiveMode({ error: 'Live voice connection lost.' });
+        } else if (connectionState === 'closed') {
+          cleanupLiveMode({ message: 'Live talking mode ended.' });
+        }
+      });
+
+      localStream.getAudioTracks().forEach((track) => {
+        pc.addTrack(track, localStream);
+      });
+
+      const offer = await pc.createOffer({ offerToReceiveAudio: true });
+      await pc.setLocalDescription(offer);
+
+      await waitForIceGatheringComplete(pc);
+
+      const localDescription = pc.localDescription;
+      if (!localDescription) {
+        throw new Error('Local description missing after gathering ICE candidates.');
+      }
+
+      const offerResponse = await submitLiveVoiceOffer(sessionId, conversationId, localDescription);
+      await pc.setRemoteDescription(offerResponse.answer);
+
+      setLiveModeStatus('connected');
+      setLiveModeMessage('Live talking mode is active.');
     } catch (err) {
-      setLiveModeStatus('idle');
-      setLiveModeError(err instanceof Error ? err.message : 'Failed to start live voice mode');
+      cleanupLiveMode({
+        error: err instanceof Error ? err.message : 'Failed to start live voice mode',
+      });
     }
   };
 
@@ -267,6 +406,10 @@ const App = () => {
   const handleNewSession = async () => {
     if (isRecording) {
       mediaRecorderRef.current?.stop();
+    }
+
+    if (liveModeStatus !== 'idle') {
+      cleanupLiveMode({ message: 'Live talking mode exited for new session.' });
     }
 
     setIsSessionResetting(true);
@@ -445,14 +588,36 @@ const App = () => {
                 hidden
               />
             </label>
-            {LIVE_MODE_FEATURE_ENABLED && (
+            {LIVE_MODE_FEATURE_ENABLED ? (
               <button
                 type="button"
-                className={`live-mode-button${liveModeStatus === 'connecting' ? ' pending' : ''}`}
-                onClick={handleEnterLiveMode}
-                disabled={isLoading || isRecording || isSessionResetting || liveModeStatus === 'connecting'}
+                className={`live-mode-button${
+                  liveModeStatus === 'connected'
+                    ? ' active'
+                    : liveModeStatus === 'requesting' || liveModeStatus === 'connecting'
+                      ? ' pending'
+                      : ''
+                }`}
+                onClick={handleToggleLiveMode}
+                disabled={
+                  isLoading ||
+                  isRecording ||
+                  isSessionResetting ||
+                  liveModeStatus === 'requesting' ||
+                  liveModeStatus === 'connecting'
+                }
               >
-                {liveModeStatus === 'connecting' ? 'Connecting…' : 'Live talking mode'}
+                {liveModeStatus === 'requesting'
+                  ? 'Authorizing…'
+                  : liveModeStatus === 'connecting'
+                    ? 'Connecting…'
+                    : liveModeStatus === 'connected'
+                      ? 'Leave live mode'
+                      : 'Live talking mode'}
+              </button>
+            ) : (
+              <button type="button" className="live-mode-button" disabled>
+                Live talking mode (enable with feature flag)
               </button>
             )}
             {recordingSupported && (
@@ -470,10 +635,24 @@ const App = () => {
             </button>
           </div>
         </form>
+        <audio
+          ref={remoteAudioRef}
+          className="live-mode-audio"
+          autoPlay
+          playsInline
+          controls
+          style={{ display: liveModeStatus === 'connected' ? 'block' : 'none' }}
+        />
         {LIVE_MODE_FEATURE_ENABLED && liveModeMessage && (
           <p className="info-message">{liveModeMessage}</p>
         )}
         {LIVE_MODE_FEATURE_ENABLED && liveModeError && <p className="error-message">{liveModeError}</p>}
+        {!LIVE_MODE_FEATURE_ENABLED && (
+          <p className="info-message">
+            Voice live mode is off. Set <code>VITE_ENABLE_VOICE_LIVE_MODE=true</code> in the client and
+            <code>ENABLE_VOICE_LIVE_MODE=true</code> on the server, then restart to try the WebRTC stub.
+          </p>
+        )}
         {recordingError && <p className="error-message">{recordingError}</p>}
         {error && <p className="error-message">{error}</p>}
       </footer>

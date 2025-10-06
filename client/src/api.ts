@@ -1,6 +1,7 @@
 import type {
   AgentReply,
   CreateConversationResponse,
+  LiveVoiceOfferResponse,
   LiveVoiceSessionResponse,
   ResetSessionResponse,
   SendMessageResponse,
@@ -97,6 +98,24 @@ export const requestLiveVoiceSession = async (
   });
 
   return handleResponse<LiveVoiceSessionResponse>(response);
+};
+
+export const submitLiveVoiceOffer = async (
+  sessionId: string,
+  conversationId: string,
+  offer: RTCSessionDescriptionInit
+): Promise<LiveVoiceOfferResponse> => {
+  const response = await fetch(`${BASE_URL}/api/voice/live/offer`, {
+    method: 'POST',
+    headers: buildJsonHeaders(sessionId),
+    body: JSON.stringify({
+      conversationId,
+      sdp: offer.sdp,
+      type: offer.type,
+    }),
+  });
+
+  return handleResponse<LiveVoiceOfferResponse>(response);
 };
 
 export const formatAgentLabel = (agent: AgentReply['agent'] | 'manager'): string => {
