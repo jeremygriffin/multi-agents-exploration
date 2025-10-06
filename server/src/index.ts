@@ -40,9 +40,8 @@ void sessions.init();
 const usageTracker = new UsageTracker();
 void usageTracker.init();
 const usageLimits = new UsageLimitService(usageTracker, logger, buildUsageLimitConfigFromEnv());
-const liveVoice = new LiveVoiceService(usageLimits, logger);
-
 const orchestrator = new Orchestrator(store, logger, usageLimits);
+const liveVoice = new LiveVoiceService(orchestrator, usageLimits, logger);
 
 app.use(createSessionMiddleware(sessions));
 

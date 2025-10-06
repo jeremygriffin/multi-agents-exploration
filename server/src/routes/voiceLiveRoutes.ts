@@ -2,7 +2,11 @@ import { Router } from 'express';
 
 import { requireSessionContext } from '../middleware/sessionMiddleware';
 import type { Orchestrator } from '../orchestrator';
-import type { LiveVoiceService } from '../services/liveVoiceService';
+import type {
+  LiveVoiceOfferRequest,
+  LiveVoiceService,
+  LiveVoiceSessionRequest,
+} from '../services/liveVoiceService';
 
 export const createVoiceLiveRouter = (
   orchestrator: Orchestrator,
@@ -10,48 +14,96 @@ export const createVoiceLiveRouter = (
 ): Router => {
   const router = Router();
 
-  router.post('/session', async (req, res) => {
-    const { sessionId, ipAddress } = requireSessionContext(req);
-    const { conversationId } = req.body as { conversationId?: string };
+  router.post('/session', async (req, res, next) => {
+    try {
+      const { sessionId, ipAddress } = requireSessionContext(req);
+      const { conversationId } = req.body as { conversationId?: string };
 
-    if (!conversationId) {
-      res.status(400).json({ error: 'conversationId is required' });
-      return;
+      if (!conversationId) {
+        res.status(400).json({ error: 'conversationId is required' });
+        return;
+      }
+
+      const conversation = orchestrator.getConversation(conversationId);
+
+      if (!conversation) {
+        res.status(404).json({ error: 'Conversation not found' });
+        return;
+      }
+
+      if (conversation.sessionId !== sessionId) {
+        res.status(403).json({ error: 'Conversation does not belong to the active session' });
+        return;
+      }
+
+      const payload: LiveVoiceSessionRequest = {
+        conversationId,
+        sessionId,
+        ...(ipAddress ? { ipAddress } : {}),
+      };
+      const outcome = await liveVoice.createSession(payload);
+
+      if (outcome.status === 'disabled') {
+        res.status(404).json({ error: outcome.message });
+        return;
+      }
+
+      if (outcome.status === 'blocked') {
+        res.status(429).json({ error: outcome.message });
+        return;
+      }
+
+      res.status(200).json(outcome);
+    } catch (error) {
+      next(error);
     }
-
-    const conversation = orchestrator.getConversation(conversationId);
-
-    if (!conversation) {
-      res.status(404).json({ error: 'Conversation not found' });
-      return;
-    }
-
-    if (conversation.sessionId !== sessionId) {
-      res.status(403).json({ error: 'Conversation does not belong to the active session' });
-      return;
-    }
-
-    const outcome = await liveVoice.createSession({ conversationId, sessionId, ipAddress });
-
-    if (outcome.status === 'disabled') {
-      res.status(404).json({ error: outcome.message });
-      return;
-    }
-
-    res.status(202).json({
-      status: outcome.status,
-      message: outcome.message,
-      notes: outcome.notes,
-    });
   });
 
-  router.post('/offer', (_req, res) => {
-    if (!liveVoice.isEnabled()) {
-      res.status(404).json({ error: 'Live voice mode is not enabled on this server.' });
-      return;
-    }
+  router.post('/offer', async (req, res, next) => {
+    try {
+      if (!liveVoice.isEnabled()) {
+        res.status(404).json({ error: 'Live voice mode is not enabled on this server.' });
+        return;
+      }
 
-    res.status(501).json({ error: 'Live voice offer handling coming soon.' });
+      const { sessionId, ipAddress } = requireSessionContext(req);
+      const { conversationId, sdp, type } = req.body as {
+        conversationId?: string;
+        sdp?: string;
+        type?: 'offer' | 'answer';
+      };
+
+      if (!conversationId || !sdp) {
+        res.status(400).json({ error: 'conversationId and sdp are required' });
+        return;
+      }
+
+      const conversation = orchestrator.getConversation(conversationId);
+
+      if (!conversation) {
+        res.status(404).json({ error: 'Conversation not found' });
+        return;
+      }
+
+      if (conversation.sessionId !== sessionId) {
+        res.status(403).json({ error: 'Conversation does not belong to the active session' });
+        return;
+      }
+
+      const offerRequest: LiveVoiceOfferRequest = {
+        conversationId,
+        sessionId,
+        sdp,
+        ...(typeof type === 'string' ? { type } : {}),
+        ...(ipAddress ? { ipAddress } : {}),
+      };
+
+      const outcome = await liveVoice.handleOffer(offerRequest);
+
+      res.status(200).json(outcome);
+    } catch (error) {
+      next(error);
+    }
   });
 
   return router;
