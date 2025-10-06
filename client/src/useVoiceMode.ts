@@ -42,7 +42,8 @@ export const useVoiceMode = ({ sessionId, conversationId, onTranscript }: VoiceM
   const pendingTranscriptRef = useRef<string | null>(null);
   const pendingFlushTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingCancelRef = useRef<string[]>([]);
-  const pendingSpeechQueueRef = useRef<string[]>([]);
+  const pendingSpeechQueueRef = useRef<Array<{ payload: string; expectsResponse: boolean }>>([]);
+  const expectedResponseCountRef = useRef(0);
 
   const transition = useCallback(
     (next: VoiceModeStatus) => {
@@ -139,15 +140,19 @@ export const useVoiceMode = ({ sessionId, conversationId, onTranscript }: VoiceM
             : undefined;
 
         if (responseId) {
-          const channel = dataChannelRef.current;
-          if (channel && channel.readyState === 'open') {
-            try {
-              channel.send(JSON.stringify({ type: 'response.cancel', response_id: responseId }));
-            } catch (err) {
-              console.warn('[voiceMode] failed to cancel response', err);
-            }
+          if (expectedResponseCountRef.current > 0) {
+            expectedResponseCountRef.current = Math.max(expectedResponseCountRef.current - 1, 0);
           } else {
-            pendingCancelRef.current = [...pendingCancelRef.current, responseId];
+            const channel = dataChannelRef.current;
+            if (channel && channel.readyState === 'open') {
+              try {
+                channel.send(JSON.stringify({ type: 'response.cancel', response_id: responseId }));
+              } catch (err) {
+                console.warn('[voiceMode] failed to cancel response', err);
+              }
+            } else {
+              pendingCancelRef.current = [...pendingCancelRef.current, responseId];
+            }
           }
         }
         return;
@@ -295,9 +300,12 @@ export const useVoiceMode = ({ sessionId, conversationId, onTranscript }: VoiceM
         if (pendingSpeechQueueRef.current.length > 0) {
           const queue = [...pendingSpeechQueueRef.current];
           pendingSpeechQueueRef.current = [];
-          for (const message of queue) {
+          for (const { payload, expectsResponse } of queue) {
             try {
-              dataChannel.send(message);
+              if (expectsResponse) {
+                expectedResponseCountRef.current += 1;
+              }
+              dataChannel.send(payload);
             } catch (err) {
               console.warn('[voiceMode] failed to flush speech command', err);
             }
@@ -425,6 +433,7 @@ export const useVoiceMode = ({ sessionId, conversationId, onTranscript }: VoiceM
       const channel = dataChannelRef.current;
       if (channel && channel.readyState === 'open') {
         try {
+          expectedResponseCountRef.current += 1;
           channel.send(payload);
           return true;
         } catch (err) {
@@ -433,7 +442,10 @@ export const useVoiceMode = ({ sessionId, conversationId, onTranscript }: VoiceM
         }
       }
 
-      pendingSpeechQueueRef.current = [...pendingSpeechQueueRef.current, payload];
+      pendingSpeechQueueRef.current = [
+        ...pendingSpeechQueueRef.current,
+        { payload, expectsResponse: true },
+      ];
       return true;
     },
     []
