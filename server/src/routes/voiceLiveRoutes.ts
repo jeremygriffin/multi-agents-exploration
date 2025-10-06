@@ -73,8 +73,8 @@ export const createVoiceLiveRouter = (
         type?: 'offer' | 'answer';
       };
 
-      if (!conversationId || !sdp) {
-        res.status(400).json({ error: 'conversationId and sdp are required' });
+      if (!conversationId) {
+        res.status(400).json({ error: 'conversationId is required' });
         return;
       }
 
@@ -93,14 +93,14 @@ export const createVoiceLiveRouter = (
       const offerRequest: LiveVoiceOfferRequest = {
         conversationId,
         sessionId,
-        sdp,
+        ...(sdp ? { sdp } : {}),
         ...(typeof type === 'string' ? { type } : {}),
         ...(ipAddress ? { ipAddress } : {}),
       };
 
-      const outcome = await liveVoice.handleOffer(offerRequest);
+      await liveVoice.handleOffer(offerRequest);
 
-      res.status(200).json(outcome);
+      res.status(204).end();
     } catch (error) {
       next(error);
     }

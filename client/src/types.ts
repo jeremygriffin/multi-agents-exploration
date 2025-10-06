@@ -54,6 +54,7 @@ export interface LiveVoiceSessionDetails {
   conversationId: string;
   model: string;
   iceServers: RTCIceServer[];
+  clientSecret: string;
   clientSecretExpiresAt?: number;
   expiresAt?: number;
 }
@@ -62,11 +63,4 @@ export interface LiveVoiceSessionResponse {
   status: 'ready';
   message: string;
   session: LiveVoiceSessionDetails;
-}
-
-export interface LiveVoiceOfferResponse {
-  answer: {
-    type: 'answer';
-    sdp: string;
-  };
 }

@@ -4,10 +4,10 @@ import type { FormEvent } from 'react';
 import {
   createConversation,
   formatAgentLabel,
+  notifyLiveVoiceHandshake,
   requestLiveVoiceSession,
   resetSession,
   sendMessage,
-  submitLiveVoiceOffer,
 } from './api';
 import type { AgentReply, ChatEntry, LiveVoiceSessionDetails } from './types';
 import './App.css';
@@ -326,7 +326,6 @@ const App = () => {
       }
 
       const sessionResponse = await requestLiveVoiceSession(sessionId, conversationId);
-
       liveSessionRef.current = sessionResponse.session;
       setLiveModeMessage(sessionResponse.message);
 
@@ -382,8 +381,35 @@ const App = () => {
         throw new Error('Local description missing after gathering ICE candidates.');
       }
 
-      const offerResponse = await submitLiveVoiceOffer(sessionId, conversationId, localDescription);
-      await pc.setRemoteDescription(offerResponse.answer);
+      const sessionDetails = liveSessionRef.current;
+      if (!sessionDetails?.clientSecret) {
+        throw new Error('Live voice session missing client secret.');
+      }
+
+      const sdpResponse = await fetch('https://api.openai.com/v1/realtime/sdp', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${sessionDetails.clientSecret}`,
+          'Content-Type': 'application/sdp',
+          'OpenAI-Beta': 'realtime=v1',
+        },
+        body: localDescription.sdp,
+      });
+
+      if (!sdpResponse.ok) {
+        const text = await sdpResponse.text();
+        throw new Error(text || `OpenAI handshake failed with status ${sdpResponse.status}`);
+      }
+
+      const answerSdp = await sdpResponse.text();
+      const answer: RTCSessionDescriptionInit = {
+        type: 'answer',
+        sdp: answerSdp,
+      };
+
+      await pc.setRemoteDescription(answer);
+
+      await notifyLiveVoiceHandshake(sessionId, conversationId, localDescription);
 
       setLiveModeStatus('connected');
       setLiveModeMessage('Live talking mode is active.');

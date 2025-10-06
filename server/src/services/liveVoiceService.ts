@@ -20,7 +20,7 @@ export interface LiveVoiceSessionRequest {
 export interface LiveVoiceOfferRequest {
   conversationId: string;
   sessionId: string;
-  sdp: string;
+  sdp?: string;
   type?: SessionDescription['type'];
   ipAddress?: string;
 }
@@ -45,18 +45,14 @@ export interface LiveVoiceSessionDetails {
   conversationId: string;
   model: string;
   iceServers: RealtimeSession['iceServers'];
+  clientSecret: string;
   clientSecretExpiresAt?: number;
   expiresAt?: number;
-}
-
-export interface LiveVoiceOfferOutcome {
-  answer: SessionDescription;
 }
 
 interface StoredLiveSession extends LiveVoiceSessionDetails {
   sessionId: string;
   ipAddress?: string;
-  clientSecret: string;
   createdAt: number;
   lastActivityAt: number;
   openAiSessionId: string;
@@ -180,6 +176,7 @@ export class LiveVoiceService {
         conversationId: stored.conversationId,
         model: stored.model,
         iceServers: stored.iceServers,
+        clientSecret: stored.clientSecret,
         ...(typeof stored.clientSecretExpiresAt === 'number'
           ? { clientSecretExpiresAt: stored.clientSecretExpiresAt }
           : {}),
@@ -188,7 +185,7 @@ export class LiveVoiceService {
     };
   }
 
-  async handleOffer(request: LiveVoiceOfferRequest): Promise<LiveVoiceOfferOutcome> {
+  async handleOffer(request: LiveVoiceOfferRequest): Promise<void> {
     if (!this.isEnabled()) {
       throw new Error('Live voice mode is disabled.');
     }
@@ -206,11 +203,6 @@ export class LiveVoiceService {
       throw new Error('Realtime client unavailable. Check server configuration.');
     }
 
-    const answer = await this.realtimeClient.exchangeOffer(stored.openAiSessionId, stored.clientSecret, {
-      type: request.type ?? 'offer',
-      sdp: request.sdp,
-    });
-
     stored.lastActivityAt = Date.now();
 
     const logContext: LiveVoiceSessionRequest = {
@@ -222,9 +214,9 @@ export class LiveVoiceService {
     await this.appendLifecycleLog(
       logContext,
       {
-        stage: 'offer_forwarded',
+        stage: 'client_offer_received',
         allowed: true,
-        answerBytes: answer.sdp.length,
+        ...(request.sdp ? { offerBytes: request.sdp.length } : {}),
       }
     );
 
@@ -232,8 +224,6 @@ export class LiveVoiceService {
       stored.abortController = new AbortController();
       void this.beginTranscriptStream(stored, stored.abortController.signal);
     }
-
-    return { answer };
   }
 
   closeSession(conversationId: string): void {
