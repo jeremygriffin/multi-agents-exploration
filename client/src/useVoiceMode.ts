@@ -40,6 +40,7 @@ export const useVoiceMode = ({ sessionId, conversationId, onTranscript }: VoiceM
   const textDecoderRef = useRef<TextDecoder | null>(null);
   const pendingTranscriptRef = useRef<string | null>(null);
   const pendingFlushTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingCancelRef = useRef<string[]>([]);
 
   const transition = useCallback(
     (next: VoiceModeStatus) => {
@@ -58,6 +59,7 @@ export const useVoiceMode = ({ sessionId, conversationId, onTranscript }: VoiceM
       clearTimeout(pendingFlushTimeoutRef.current);
       pendingFlushTimeoutRef.current = null;
     }
+    pendingCancelRef.current = [];
     pendingTranscriptRef.current = null;
     dataChannelRef.current?.close();
     dataChannelRef.current = null;
@@ -121,10 +123,32 @@ export const useVoiceMode = ({ sessionId, conversationId, onTranscript }: VoiceM
 
       const type = typeof event.type === 'string' ? event.type : undefined;
 
-      const isInputTranscriptionEvent = typeof type === 'string' &&
+      const isInputTranscriptionEvent =
+        typeof type === 'string' &&
         (type.startsWith('input_transcription.') ||
           type.startsWith('input_audio_buffer.transcription.') ||
           type.includes('input_audio_transcription.'));
+
+      if (type === 'response.created') {
+        const responseId =
+          typeof (event as { response?: { id?: unknown } }).response?.id === 'string'
+            ? (event as { response: { id: string } }).response.id
+            : undefined;
+
+        if (responseId) {
+          const channel = dataChannelRef.current;
+          if (channel && channel.readyState === 'open') {
+            try {
+              channel.send(JSON.stringify({ type: 'response.cancel', response_id: responseId }));
+            } catch (err) {
+              console.warn('[voiceMode] failed to cancel response', err);
+            }
+          } else {
+            pendingCancelRef.current = [...pendingCancelRef.current, responseId];
+          }
+        }
+        return;
+      }
 
       if (isInputTranscriptionEvent) {
         const isDelta = type?.endsWith('.delta') ?? false;
@@ -247,13 +271,43 @@ export const useVoiceMode = ({ sessionId, conversationId, onTranscript }: VoiceM
 
       pc.addEventListener('track', (event) => {
         console.info('[voiceMode] remote track', { kind: event.track.kind });
-        remote.addTrack(event.track);
+        try {
+          event.track.stop();
+        } catch (err) {
+          console.warn('[voiceMode] failed to stop remote track', err);
+        }
       });
 
       const dataChannel = pc.createDataChannel('oai-events');
       dataChannelRef.current = dataChannel;
       dataChannel.addEventListener('open', () => {
         console.info('[voiceMode] data channel open');
+        if (pendingCancelRef.current.length > 0) {
+          const queue = [...pendingCancelRef.current];
+          pendingCancelRef.current = [];
+          for (const responseId of queue) {
+            try {
+              dataChannel.send(JSON.stringify({ type: 'response.cancel', response_id: responseId }));
+            } catch (err) {
+              console.warn('[voiceMode] failed to flush cancel command', err);
+            }
+          }
+        }
+        try {
+          dataChannel.send(
+            JSON.stringify({
+              type: 'session.update',
+              session: {
+                turn_detection: {
+                  type: 'server_vad',
+                  create_response: false,
+                },
+              },
+            })
+          );
+        } catch (err) {
+          console.warn('[voiceMode] failed to disable auto responses', err);
+        }
       });
       dataChannel.addEventListener('close', () => {
         console.info('[voiceMode] data channel closed');

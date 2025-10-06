@@ -153,6 +153,15 @@ const App = () => {
           : [];
 
         setMessages((prev) => [...prev, ...replies, ...managerNote]);
+
+        const audioReply = response.responses.find((reply) => reply.audio);
+        if (audioReply?.audio) {
+          const audioUrl = `data:${audioReply.audio.mimeType};base64,${audioReply.audio.base64Data}`;
+          const playback = new Audio(audioUrl);
+          playback.play().catch((err) => {
+            console.warn('[voiceMode] failed to autoplay agent audio', err);
+          });
+        }
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to send message');
         setMessages((prev) => [
