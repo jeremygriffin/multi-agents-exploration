@@ -13,6 +13,8 @@ import { SessionManager } from './services/sessionManager';
 import { UsageTracker } from './services/usageTracker';
 import { UsageLimitService, buildUsageLimitConfigFromEnv } from './services/usageLimitService';
 import { createLocationMcpHandler } from './mcp/locationServer';
+import { VoiceSessionService } from './services/voiceSessionService';
+import { createVoiceRouter } from './routes/voiceRoutes';
 
 const requiredEnv = ['OPENAI_API_KEY'];
 const missing = requiredEnv.filter((key) => !process.env[key]);
@@ -40,11 +42,13 @@ void usageTracker.init();
 const usageLimits = new UsageLimitService(usageTracker, logger, buildUsageLimitConfigFromEnv());
 
 const orchestrator = new Orchestrator(store, logger, usageLimits);
+const voiceSessions = new VoiceSessionService(orchestrator, logger);
 
 app.use(createSessionMiddleware(sessions));
 
 app.use('/api/sessions', createSessionRouter(sessions));
 app.use('/api/conversations', createConversationRouter(orchestrator, logger, usageLimits));
+app.use('/api/voice', createVoiceRouter(voiceSessions, usageLimits));
 
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok' });

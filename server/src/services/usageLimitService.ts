@@ -14,6 +14,8 @@ const DEFAULT_LIMITS = {
   audioIp: 80,
   ttsSession: 200,
   ttsIp: 400,
+  voiceSession: 40,
+  voiceIp: 60,
 } as const;
 
 const parseLimit = (envName: string, fallback: number): number | undefined => {
@@ -40,6 +42,10 @@ export const buildUsageLimitConfigFromEnv = (): UsageLimitConfig => ({
       DEFAULT_LIMITS.audioSession
     ),
     tts_generation: parseLimit('USAGE_LIMIT_TTS_PER_SESSION', DEFAULT_LIMITS.ttsSession),
+    voice_session: parseLimit(
+      'USAGE_LIMIT_VOICE_SESSIONS_PER_SESSION',
+      DEFAULT_LIMITS.voiceSession
+    ),
   },
   perIp: {
     message: parseLimit('USAGE_LIMIT_MESSAGES_PER_IP', DEFAULT_LIMITS.messageIp),
@@ -49,6 +55,10 @@ export const buildUsageLimitConfigFromEnv = (): UsageLimitConfig => ({
       DEFAULT_LIMITS.audioIp
     ),
     tts_generation: parseLimit('USAGE_LIMIT_TTS_PER_IP', DEFAULT_LIMITS.ttsIp),
+    voice_session: parseLimit(
+      'USAGE_LIMIT_VOICE_SESSIONS_PER_IP',
+      DEFAULT_LIMITS.voiceIp
+    ),
   },
 });
 
@@ -57,6 +67,7 @@ const eventLabels: Record<UsageEvent, string> = {
   file_upload: 'file uploads',
   audio_transcription: 'audio transcriptions',
   tts_generation: 'text-to-speech responses',
+  voice_session: 'voice sessions',
 };
 
 const logDebug = (...args: Parameters<typeof console.log>) => {

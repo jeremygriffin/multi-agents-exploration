@@ -70,7 +70,14 @@ export interface UploadedFile {
 
 export interface ConversationLogEntry {
   timestamp: string;
-  event: 'user_message' | 'manager_plan' | 'agent_response' | 'mcp_tool' | 'guardrail' | 'usage';
+  event:
+    | 'user_message'
+    | 'manager_plan'
+    | 'agent_response'
+    | 'mcp_tool'
+    | 'guardrail'
+    | 'usage'
+    | 'voice_session';
   conversationId: string;
   agent?: AgentId;
   sessionId: string;
@@ -94,9 +101,26 @@ export interface SessionSummary {
   ipAddress?: string;
 }
 
-export type UsageEvent = 'message' | 'file_upload' | 'audio_transcription' | 'tts_generation';
+export type UsageEvent =
+  | 'message'
+  | 'file_upload'
+  | 'audio_transcription'
+  | 'tts_generation'
+  | 'voice_session';
 
 export interface UsageLimitConfig {
   perSession: Partial<Record<UsageEvent, number | undefined>>;
   perIp: Partial<Record<UsageEvent, number | undefined>>;
+}
+
+export interface VoiceSessionGrant {
+  conversationId: string;
+  userSessionId: string;
+  expiresAt: number;
+  realtimeSessionId?: string;
+  model?: string;
+  voice?: string;
+  clientSecret: string;
+  iceServers?: Array<{ urls: string | string[]; username?: string; credential?: string }>;
+  instructions?: string;
 }
