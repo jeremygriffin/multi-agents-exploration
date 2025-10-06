@@ -141,9 +141,7 @@ export const useVoiceMode = ({ sessionId, conversationId }: VoiceModeOptions): V
 
       const baseUrl = 'https://api.openai.com/v1/realtime';
       const model = response.grant.model ?? 'gpt-4o-realtime-preview';
-      const targetUrl = response.grant.realtimeSessionId
-        ? `${baseUrl}/sessions/${response.grant.realtimeSessionId}/sdp`
-        : `${baseUrl}?model=${encodeURIComponent(model)}`;
+      const targetUrl = `${baseUrl}?model=${encodeURIComponent(model)}`;
 
       const sdpResponse = await fetch(targetUrl, {
         method: 'POST',
