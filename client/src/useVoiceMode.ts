@@ -168,7 +168,15 @@ export const useVoiceMode = ({ sessionId, conversationId, onTranscript }: VoiceM
       }
 
       if (type === 'error') {
-        console.error('[voiceMode] realtime error', payload);
+        let serialized: string | undefined;
+        try {
+          serialized = JSON.stringify(payload);
+        } catch (serializationError) {
+          const reason = serializationError instanceof Error ? serializationError.message : serializationError;
+          console.warn('[voiceMode] failed to serialize realtime error payload', reason);
+        }
+        console.error('[voiceMode] realtime error', serialized ?? payload);
+        setError('Realtime voice session error. Check console logs for details.');
         return;
       }
 
@@ -449,7 +457,20 @@ export const useVoiceMode = ({ sessionId, conversationId, onTranscript }: VoiceM
         type: 'response.create',
         response: {
           modalities: ['audio'],
-          instructions: trimmed,
+          conversation: {
+            messages: [
+              {
+                role: 'assistant' as const,
+                content: [
+                  {
+                    type: 'output_text' as const,
+                    text: trimmed,
+                  },
+                ],
+              },
+            ],
+          },
+          instructions: 'Convert the provided assistant message into spoken audio. Do not add new content.',
         },
       } as const;
 
