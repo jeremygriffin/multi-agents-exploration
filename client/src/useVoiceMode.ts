@@ -459,19 +459,7 @@ export const useVoiceMode = ({ sessionId, conversationId, onTranscript }: VoiceM
         response: {
           modalities: ['audio', 'text'],
           conversation: 'none' as const,
-          instructions: 'Speak the provided assistant reply exactly as written.',
-          output: [
-            {
-              type: 'message' as const,
-              role: 'assistant' as const,
-              content: [
-                {
-                  type: 'output_text' as const,
-                  text: trimmed,
-                },
-              ],
-            },
-          ],
+          instructions: `Speak the following assistant reply verbatim without adding commentary:\n\n${trimmed}`,
         },
       } as const;
 
