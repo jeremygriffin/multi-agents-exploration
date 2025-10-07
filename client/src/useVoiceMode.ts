@@ -457,20 +457,7 @@ export const useVoiceMode = ({ sessionId, conversationId, onTranscript }: VoiceM
         type: 'response.create',
         response: {
           modalities: ['audio'],
-          conversation: {
-            messages: [
-              {
-                role: 'assistant' as const,
-                content: [
-                  {
-                    type: 'output_text' as const,
-                    text: trimmed,
-                  },
-                ],
-              },
-            ],
-          },
-          instructions: 'Convert the provided assistant message into spoken audio. Do not add new content.',
+          instructions: `Read the following assistant reply verbatim without adding commentary.\n\n${trimmed}`,
         },
       } as const;
 
