@@ -77,7 +77,8 @@ export interface ConversationLogEntry {
     | 'mcp_tool'
     | 'guardrail'
     | 'usage'
-    | 'voice_session';
+    | 'voice_session'
+    | 'voice_session_error';
   conversationId: string;
   agent?: AgentId;
   sessionId: string;

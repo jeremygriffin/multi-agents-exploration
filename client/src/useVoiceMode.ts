@@ -429,6 +429,7 @@ export const useVoiceMode = ({ sessionId, conversationId, onTranscript }: VoiceM
 
       transition('active');
     } catch (err) {
+      console.error('[voiceMode] failed to start voice session', err);
       const message = err instanceof Error ? err.message : 'Failed to start voice session';
       setError(message);
       transition('error');
@@ -456,7 +457,7 @@ export const useVoiceMode = ({ sessionId, conversationId, onTranscript }: VoiceM
       const payloadObject = {
         type: 'response.create',
         response: {
-          modalities: ['audio'],
+          modalities: ['audio', 'text'],
           instructions: `Read the following assistant reply verbatim without adding commentary.\n\n${trimmed}`,
         },
       } as const;

@@ -1,3 +1,4 @@
+import OpenAI from 'openai';
 import type { SessionCreateParams, SessionCreateResponse } from 'openai/resources/beta/realtime/sessions';
 
 import type { Orchestrator } from '../orchestrator';
@@ -71,10 +72,44 @@ export class VoiceSessionService {
         ...(instructions ? { instructions } : {}),
       });
     } catch (error) {
-      throw new VoiceSessionError(
-        error instanceof Error ? error.message : 'Failed to create realtime session',
-        502
-      );
+      const fallbackMessage = 'Failed to create realtime session';
+      const message = error instanceof Error ? error.message : fallbackMessage;
+
+      const apiError = error instanceof OpenAI.APIError ? error : null;
+      const errorPayload = apiError
+        ? {
+            status: apiError.status,
+            code: apiError.code,
+            type: apiError.type,
+            param: apiError.param,
+          }
+        : { kind: typeof error, value: error };
+
+      console.error('[voiceSession] realtime session creation failed', {
+        conversationId,
+        sessionId,
+        message,
+        ...errorPayload,
+      });
+
+      try {
+        await this.logger.append({
+          timestamp: new Date().toISOString(),
+          event: 'voice_session_error',
+          conversationId,
+          sessionId,
+          ...(ipAddress ? { ipAddress } : {}),
+          payload: {
+            action: 'create_failed',
+            message,
+            ...errorPayload,
+          },
+        });
+      } catch (logError) {
+        console.warn('[voiceSession] failed to log voice session error', logError);
+      }
+
+      throw new VoiceSessionError(message, 502);
     }
 
     const sessionDetails = realtimeSession as SessionCreateResponse & {
