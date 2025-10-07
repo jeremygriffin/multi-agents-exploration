@@ -321,14 +321,15 @@ export class Orchestrator {
           if (evaluation.status === 'mismatch') {
             const strategy = this.responseGuard.getRecoveryStrategy();
 
-            // eslint-disable-next-line no-console
-            console.log('[guardrails][response] mismatch detected', {
-              conversationId,
-              sessionId,
-              agent: action.agent,
-              strategy,
-              reason: evaluation.reason,
-            });
+            if (process.env.DEBUG === 'true') {
+              console.debug('[guardrails][response] mismatch detected', {
+                conversationId,
+                sessionId,
+                agent: action.agent,
+                strategy,
+                reason: evaluation.reason,
+              });
+            }
 
             if (strategy === 'retry') {
               const retryMessage = `${delegatedMessage}\n\nGuardrail feedback: ${

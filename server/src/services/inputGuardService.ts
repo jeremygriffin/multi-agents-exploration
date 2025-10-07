@@ -9,9 +9,11 @@ export type InputGuardSource = 'initial' | 'voice_transcription';
 const isTestEnvironment = () =>
   process.env.NODE_ENV === 'test' || typeof process.env.VITEST_WORKER_ID !== 'undefined';
 
-const debugLog = (...args: Parameters<typeof console.log>) => {
-  if (!isTestEnvironment()) {
-    console.log(...args);
+const isDebugEnabled = () => process.env.DEBUG === 'true';
+
+const debugLog = (...args: Parameters<typeof console.debug>) => {
+  if (!isTestEnvironment() && isDebugEnabled()) {
+    console.debug(...args);
   }
 };
 

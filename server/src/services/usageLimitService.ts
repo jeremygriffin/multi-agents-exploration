@@ -70,9 +70,11 @@ const eventLabels: Record<UsageEvent, string> = {
   voice_session: 'voice sessions',
 };
 
-const logDebug = (...args: Parameters<typeof console.log>) => {
-  if (!isTestEnvironment()) {
-    console.log(...args);
+const isDebugEnabled = () => process.env.DEBUG === 'true';
+
+const logDebug = (...args: Parameters<typeof console.debug>) => {
+  if (!isTestEnvironment() && isDebugEnabled()) {
+    console.debug(...args);
   }
 };
 
