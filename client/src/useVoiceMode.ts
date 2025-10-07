@@ -23,6 +23,7 @@ interface VoiceModeControls extends VoiceModeState {
   stop: () => void;
   isBusy: boolean;
   speak: (text: string) => boolean;
+  isReadyToListen: boolean;
 }
 
 const logTransition = (from: VoiceModeStatus, to: VoiceModeStatus) => {
@@ -34,6 +35,7 @@ export const useVoiceMode = ({ sessionId, conversationId, onTranscript }: VoiceM
   const [error, setError] = useState<string | null>(null);
   const [grant, setGrant] = useState<VoiceSessionGrant | null>(null);
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
+  const [isReadyToListen, setIsReadyToListen] = useState(false);
   const localStreamRef = useRef<MediaStream | null>(null);
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
   const dataChannelRef = useRef<RTCDataChannel | null>(null);
@@ -44,6 +46,12 @@ export const useVoiceMode = ({ sessionId, conversationId, onTranscript }: VoiceM
   const pendingCancelRef = useRef<string[]>([]);
   const pendingSpeechQueueRef = useRef<Array<{ payload: string; expectsResponse: boolean }>>([]);
   const expectedResponseCountRef = useRef(0);
+
+  const updateReadiness = useCallback(() => {
+    const pcReady = peerConnectionRef.current?.connectionState === 'connected';
+    const channelReady = dataChannelRef.current?.readyState === 'open';
+    setIsReadyToListen(Boolean(pcReady && channelReady));
+  }, []);
 
   const transition = useCallback(
     (next: VoiceModeStatus) => {
@@ -89,6 +97,7 @@ export const useVoiceMode = ({ sessionId, conversationId, onTranscript }: VoiceM
 
     setRemoteStream(null);
     transcriptBufferRef.current = '';
+    setIsReadyToListen(false);
   }, []);
 
   const emitTranscript = useCallback(
@@ -279,6 +288,7 @@ export const useVoiceMode = ({ sessionId, conversationId, onTranscript }: VoiceM
       setError(null);
       transition('requesting');
       transcriptBufferRef.current = '';
+      setIsReadyToListen(false);
 
       const response = await createVoiceSession(sessionId, conversationId);
       setGrant(response.grant);
@@ -293,6 +303,7 @@ export const useVoiceMode = ({ sessionId, conversationId, onTranscript }: VoiceM
       pc.addEventListener('connectionstatechange', () => {
         const state = pc.connectionState;
         console.info('[voiceMode] connection state change', state);
+        updateReadiness();
         if (state === 'failed' || state === 'disconnected' || state === 'closed') {
           teardown();
           setError(state === 'closed' ? null : 'Voice connection lost.');
@@ -349,6 +360,8 @@ export const useVoiceMode = ({ sessionId, conversationId, onTranscript }: VoiceM
                 turn_detection: {
                   type: 'server_vad',
                   create_response: false,
+                  speaking_duration_ms: 200,
+                  silence_duration_ms: 250,
                 },
               },
             })
@@ -356,9 +369,11 @@ export const useVoiceMode = ({ sessionId, conversationId, onTranscript }: VoiceM
         } catch (err) {
           console.warn('[voiceMode] failed to disable auto responses', err);
         }
+        updateReadiness();
       });
       dataChannel.addEventListener('close', () => {
         console.info('[voiceMode] data channel closed');
+        setIsReadyToListen(false);
       });
       dataChannel.addEventListener('message', (event) => {
         const raw = event.data;
@@ -435,7 +450,7 @@ export const useVoiceMode = ({ sessionId, conversationId, onTranscript }: VoiceM
       transition('error');
       teardown();
     }
-  }, [conversationId, handleRealtimePayload, sessionId, teardown, transition]);
+  }, [conversationId, handleRealtimePayload, sessionId, teardown, transition, updateReadiness]);
 
   const stop = useCallback(() => {
     teardown();
@@ -515,5 +530,6 @@ export const useVoiceMode = ({ sessionId, conversationId, onTranscript }: VoiceM
     stop,
     isBusy,
     speak,
+    isReadyToListen,
   };
 };

@@ -484,6 +484,11 @@ const App = () => {
         <p className="app-subtitle">Greeting · Summarizer · Time Helper · Input Coach · Voice</p>
         <div className="voice-status">
           <span>{`Voice: ${voiceMode.status}`}</span>
+          {voiceMode.status === 'active' && (
+            <span className={`voice-ready ${voiceMode.isReadyToListen ? 'ready' : 'pending'}`}>
+              {voiceMode.isReadyToListen ? 'Listening now' : 'Preparing microphone…'}
+            </span>
+          )}
           {voiceMode.grant && (
             <span className="voice-meta">{`Model: ${voiceMode.grant.model ?? 'default'} · Voice: ${
               voiceMode.grant.voice ?? 'default'
