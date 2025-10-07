@@ -9,6 +9,8 @@ import Holidays from 'date-holidays';
 import { buildLocationMatches } from '../location/locationMatcher';
 import { toIsoInZone, resolveTargetDate } from './timeUtils';
 
+const isDebugEnabled = () => process.env.DEBUG === 'true';
+
 const locationServer = new McpServer({
   name: 'location-resolver',
   version: '0.1.0',
@@ -36,14 +38,16 @@ locationServer.registerTool(
       matchCount: matches.length,
     };
 
-    // eslint-disable-next-line no-console
-    console.debug('[MCP] resolve_location', {
-      rawArgs: inspect(argsInput, { depth: null, breakLength: Infinity }),
-      extra: inspect(extra, { depth: 1 }),
-      rawQuery,
-      query,
-      matchCount: matches.length,
-    });
+    if (isDebugEnabled()) {
+      // eslint-disable-next-line no-console
+      console.debug('[MCP] resolve_location', {
+        rawArgs: inspect(argsInput, { depth: null, breakLength: Infinity }),
+        extra: inspect(extra, { depth: 1 }),
+        rawQuery,
+        query,
+        matchCount: matches.length,
+      });
+    }
 
     return {
       content: [
@@ -225,19 +229,21 @@ const connectionReady = locationServer.connect(transport).catch((error) => {
 export const createLocationMcpHandler = () => {
   return async (req: Request, res: Response): Promise<void> => {
     await connectionReady;
-    // eslint-disable-next-line no-console
-    console.debug('[MCP] incoming request', {
-      method: req.method,
-      query: req.query,
-      headers: {
-        'mcp-session-id': req.headers['mcp-session-id'],
-        'content-type': req.headers['content-type'],
-      },
-      body:
-        typeof req.body === 'object'
-          ? inspect(req.body, { depth: null, breakLength: Infinity })
-          : req.body,
-    });
+    if (isDebugEnabled()) {
+      // eslint-disable-next-line no-console
+      console.debug('[MCP] incoming request', {
+        method: req.method,
+        query: req.query,
+        headers: {
+          'mcp-session-id': req.headers['mcp-session-id'],
+          'content-type': req.headers['content-type'],
+        },
+        body:
+          typeof req.body === 'object'
+            ? inspect(req.body, { depth: null, breakLength: Infinity })
+            : req.body,
+      });
+    }
     await transport.handleRequest(req, res, req.body);
   };
 };

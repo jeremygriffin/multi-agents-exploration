@@ -17,6 +17,21 @@ import { VoiceSessionService } from './services/voiceSessionService';
 import { createVoiceRouter } from './routes/voiceRoutes';
 import { VoiceRealtimeBridge } from './services/voiceRealtimeBridge';
 
+const originalConsoleLog = console.log;
+console.log = (...args: Parameters<typeof console.log>) => {
+  if (process.env.DEBUG === 'true') {
+    originalConsoleLog(...args);
+    return;
+  }
+
+  const [firstArg] = args;
+  if (typeof firstArg === 'string' && firstArg.startsWith('Context length:')) {
+    return;
+  }
+
+  originalConsoleLog(...args);
+};
+
 const requiredEnv = ['OPENAI_API_KEY'];
 const missing = requiredEnv.filter((key) => !process.env[key]);
 

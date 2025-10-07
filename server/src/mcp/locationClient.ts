@@ -92,14 +92,16 @@ export class LocationMcpClient {
       arguments: args,
     });
 
-    // eslint-disable-next-line no-console
-    console.debug('[MCP] callTool result', {
-      name,
-      args,
-      isError: result.isError,
-      hasStructured: Boolean((result as { structuredContent?: unknown }).structuredContent),
-      rawResult: inspect(result, { depth: null, breakLength: Infinity }),
-    });
+    if (process.env.DEBUG === 'true') {
+      // eslint-disable-next-line no-console
+      console.debug('[MCP] callTool result', {
+        name,
+        args,
+        isError: result.isError,
+        hasStructured: Boolean((result as { structuredContent?: unknown }).structuredContent),
+        rawResult: inspect(result, { depth: null, breakLength: Infinity }),
+      });
+    }
 
     if (result.isError) {
       return null;
