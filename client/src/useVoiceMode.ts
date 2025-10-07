@@ -27,7 +27,7 @@ interface VoiceModeControls extends VoiceModeState {
 }
 
 const logTransition = (from: VoiceModeStatus, to: VoiceModeStatus) => {
-  console.info('[voiceMode] transition', { from, to, at: new Date().toISOString() });
+  console.debug('[voiceMode] transition', { from, to, at: new Date().toISOString() });
 };
 
 export const useVoiceMode = ({ sessionId, conversationId, onTranscript }: VoiceModeOptions): VoiceModeControls => {
@@ -80,7 +80,7 @@ export const useVoiceMode = ({ sessionId, conversationId, onTranscript }: VoiceM
       try {
         sender.track?.stop();
       } catch (err) {
-        console.warn('[voiceMode] failed to stop sender track', err);
+      console.debug('[voiceMode] failed to stop sender track', err);
       }
     });
     peerConnectionRef.current?.close();
@@ -90,7 +90,7 @@ export const useVoiceMode = ({ sessionId, conversationId, onTranscript }: VoiceM
       try {
         track.stop();
       } catch (err) {
-        console.warn('[voiceMode] failed to stop local track', err);
+      console.debug('[voiceMode] failed to stop local track', err);
       }
     });
     localStreamRef.current = null;
@@ -151,7 +151,7 @@ export const useVoiceMode = ({ sessionId, conversationId, onTranscript }: VoiceM
         if (responseId) {
           if (expectedResponseCountRef.current > 0) {
             expectedResponseCountRef.current = Math.max(expectedResponseCountRef.current - 1, 0);
-            console.info('[voiceMode] response.created (expected)', {
+          console.debug('[voiceMode] response.created (expected)', {
               responseId,
               remainingExpected: expectedResponseCountRef.current,
             });
@@ -160,13 +160,13 @@ export const useVoiceMode = ({ sessionId, conversationId, onTranscript }: VoiceM
             if (channel && channel.readyState === 'open') {
               try {
                 channel.send(JSON.stringify({ type: 'response.cancel', response_id: responseId }));
-                console.info('[voiceMode] cancelled unsolicited response', { responseId });
+                console.debug('[voiceMode] cancelled unsolicited response', { responseId });
               } catch (err) {
                 console.warn('[voiceMode] failed to cancel response', err);
               }
             } else {
               pendingCancelRef.current = [...pendingCancelRef.current, responseId];
-              console.info('[voiceMode] queued cancel for unsolicited response', {
+              console.debug('[voiceMode] queued cancel for unsolicited response', {
                 responseId,
                 queued: pendingCancelRef.current.length,
               });
@@ -190,7 +190,7 @@ export const useVoiceMode = ({ sessionId, conversationId, onTranscript }: VoiceM
       }
 
       if (typeof type === 'string' && type.startsWith('response.')) {
-        console.info('[voiceMode] response event', type, payload);
+        console.debug('[voiceMode] response event', type, payload);
       }
 
       if (isInputTranscriptionEvent) {
@@ -268,11 +268,11 @@ export const useVoiceMode = ({ sessionId, conversationId, onTranscript }: VoiceM
         }
 
         // Fall-through for other input transcription events we don't explicitly handle.
-        console.info('[voiceMode] event', type, payload);
+        console.debug('[voiceMode] event', type, payload);
         return;
       }
 
-      console.info('[voiceMode] event', type ?? 'unknown', payload);
+      console.debug('[voiceMode] event', type ?? 'unknown', payload);
     },
     [emitTranscript, setError]
   );
@@ -302,7 +302,7 @@ export const useVoiceMode = ({ sessionId, conversationId, onTranscript }: VoiceM
 
       pc.addEventListener('connectionstatechange', () => {
         const state = pc.connectionState;
-        console.info('[voiceMode] connection state change', state);
+        console.debug('[voiceMode] connection state change', state);
         updateReadiness();
         if (state === 'failed' || state === 'disconnected' || state === 'closed') {
           teardown();
@@ -315,14 +315,14 @@ export const useVoiceMode = ({ sessionId, conversationId, onTranscript }: VoiceM
       setRemoteStream(remote);
 
       pc.addEventListener('track', (event) => {
-        console.info('[voiceMode] remote track', { kind: event.track.kind });
+        console.debug('[voiceMode] remote track', { kind: event.track.kind });
         remote.addTrack(event.track);
       });
 
       const dataChannel = pc.createDataChannel('oai-events');
       dataChannelRef.current = dataChannel;
       dataChannel.addEventListener('open', () => {
-        console.info('[voiceMode] data channel open');
+        console.debug('[voiceMode] data channel open');
         if (pendingCancelRef.current.length > 0) {
           const queue = [...pendingCancelRef.current];
           pendingCancelRef.current = [];
@@ -330,7 +330,7 @@ export const useVoiceMode = ({ sessionId, conversationId, onTranscript }: VoiceM
             try {
               dataChannel.send(JSON.stringify({ type: 'response.cancel', response_id: responseId }));
             } catch (err) {
-              console.warn('[voiceMode] failed to flush cancel command', err);
+              console.debug('[voiceMode] failed to flush cancel command', err);
             }
           }
         }
@@ -343,12 +343,12 @@ export const useVoiceMode = ({ sessionId, conversationId, onTranscript }: VoiceM
                 expectedResponseCountRef.current += 1;
               }
               dataChannel.send(payload);
-              console.info('[voiceMode] flushed queued speech payload', {
+              console.debug('[voiceMode] flushed queued speech payload', {
                 expectsResponse,
                 expectedResponses: expectedResponseCountRef.current,
               });
             } catch (err) {
-              console.warn('[voiceMode] failed to flush speech command', err);
+              console.debug('[voiceMode] failed to flush speech command', err);
             }
           }
         }
@@ -370,7 +370,7 @@ export const useVoiceMode = ({ sessionId, conversationId, onTranscript }: VoiceM
         updateReadiness();
       });
       dataChannel.addEventListener('close', () => {
-        console.info('[voiceMode] data channel closed');
+        console.debug('[voiceMode] data channel closed');
         setIsReadyToListen(false);
       });
       dataChannel.addEventListener('message', (event) => {
@@ -390,7 +390,7 @@ export const useVoiceMode = ({ sessionId, conversationId, onTranscript }: VoiceM
         }
 
         if (!text) {
-          console.info('[voiceMode] unhandled event payload', raw);
+          console.debug('[voiceMode] unhandled event payload', raw);
           return;
         }
 
@@ -463,7 +463,7 @@ export const useVoiceMode = ({ sessionId, conversationId, onTranscript }: VoiceM
     (text: string) => {
       const trimmed = text.trim();
       if (!trimmed) {
-        console.info('[voiceMode] speak skipped (empty)');
+        console.debug('[voiceMode] speak skipped (empty)');
         return false;
       }
 
@@ -486,18 +486,18 @@ export const useVoiceMode = ({ sessionId, conversationId, onTranscript }: VoiceM
       const payload = JSON.stringify(payloadObject);
       const channel = dataChannelRef.current;
 
-      console.info('[voiceMode] speech enqueue attempt', {
+      console.debug('[voiceMode] speech enqueue attempt', {
         snippet: trimmed.slice(0, 120),
         length: trimmed.length,
         channelState: channel?.readyState,
       });
-      console.info('[voiceMode] outbound instructions', payloadObject.response.instructions);
+      console.debug('[voiceMode] outbound instructions', payloadObject.response.instructions);
 
       if (channel && channel.readyState === 'open') {
         try {
           expectedResponseCountRef.current += 1;
           channel.send(payload);
-          console.info('[voiceMode] speech payload sent', {
+          console.debug('[voiceMode] speech payload sent', {
             expectedResponses: expectedResponseCountRef.current,
           });
           return true;
@@ -511,7 +511,7 @@ export const useVoiceMode = ({ sessionId, conversationId, onTranscript }: VoiceM
         ...pendingSpeechQueueRef.current,
         { payload, expectsResponse: true },
       ];
-      console.info('[voiceMode] speech payload queued', {
+      console.debug('[voiceMode] speech payload queued', {
         queueSize: pendingSpeechQueueRef.current.length,
       });
       return true;

@@ -322,7 +322,7 @@ const App = () => {
 
   useEffect(() => {
     if (voiceMode.status === 'active') {
-      console.info('[voiceMode] active');
+      console.debug('[voiceMode] active');
     }
   }, [voiceMode.status]);
 
