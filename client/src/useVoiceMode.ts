@@ -478,7 +478,7 @@ export const useVoiceMode = ({ sessionId, conversationId, onTranscript }: VoiceM
         length: trimmed.length,
         channelState: channel?.readyState,
       });
-      console.debug('[voiceMode] outbound instructions', payloadObject.response.instructions);
+      console.info('[voiceMode] outbound instructions', payloadObject.response.instructions);
 
       if (channel && channel.readyState === 'open') {
         try {
