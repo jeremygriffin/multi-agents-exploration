@@ -360,8 +360,6 @@ export const useVoiceMode = ({ sessionId, conversationId, onTranscript }: VoiceM
                 turn_detection: {
                   type: 'server_vad',
                   create_response: false,
-                  speaking_duration_ms: 200,
-                  silence_duration_ms: 250,
                 },
               },
             })
