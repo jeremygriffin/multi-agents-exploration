@@ -454,12 +454,19 @@ export const useVoiceMode = ({ sessionId, conversationId, onTranscript }: VoiceM
         return false;
       }
 
+      const instructionPrefix = [
+        'You are converting finalized assistant text to speech.',
+        'Ignore prior conversation context.',
+        'Say only the content between the markers verbatim with the same punctuation.',
+        'Do not add greetings, confirmations, or summaries.',
+      ].join(' ');
+
       const payloadObject = {
         type: 'response.create',
         response: {
           modalities: ['audio', 'text'],
           conversation: 'none' as const,
-          instructions: `Speak the following assistant reply verbatim without adding commentary:\n\n${trimmed}`,
+          instructions: `${instructionPrefix}\n<<<ASSISTANT_REPLY>>>\n${trimmed}\n<<<END_REPLY>>>`,
         },
       } as const;
 
@@ -471,6 +478,7 @@ export const useVoiceMode = ({ sessionId, conversationId, onTranscript }: VoiceM
         length: trimmed.length,
         channelState: channel?.readyState,
       });
+      console.debug('[voiceMode] outbound instructions', payloadObject.response.instructions);
 
       if (channel && channel.readyState === 'open') {
         try {
