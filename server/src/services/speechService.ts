@@ -1,6 +1,8 @@
 import OpenAI from 'openai';
 import { toFile } from 'openai/uploads';
 
+import { createOpenAIClient } from '../config/openaiConfig';
+
 export interface TranscriptionResult {
   text: string;
   raw?: unknown;
@@ -22,8 +24,7 @@ export const getOpenAIClient = (): OpenAI => {
     return client;
   }
 
-  client = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY,
+  client = createOpenAIClient({
     maxRetries: 0,
   });
   return client;

@@ -24,11 +24,15 @@ Local playground demonstrating the [OpenAI Agents SDK](https://github.com/openai
    ```bash
    npm install
    ```
-2. Create `server/.env` with your API key (or export it in the shell):
+2. Create `server/.env` with your API key and Prompt Security App ID (or export them in the shell):
    ```bash
-   echo "OPENAI_API_KEY=sk-..." > server/.env
+   cat <<'EOF' > server/.env
+   OPENAI_API_KEY=sk-...
+   PROMPT_SECURITY_APP_ID=ps-...
+   EOF
    ```
-   Alternatively, export `OPENAI_API_KEY` before starting the server.
+   Alternatively, export both variables before starting the server. Set `USE_PROMPT_SECURITY=true` to send all OpenAI traffic
+   through the Prompt Security gateway at `https://useast.prompt.security/v1/`; otherwise requests go directly to OpenAI.
 
 ## Running Locally
 Open two terminals:
