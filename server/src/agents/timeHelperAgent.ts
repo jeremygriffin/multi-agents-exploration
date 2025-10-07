@@ -13,6 +13,7 @@ import {
 import type { InteractionLogger } from '../services/interactionLogger';
 import type { TokenUsageSnapshot } from '../types';
 import { addTokenUsage, toTokenUsage } from '../utils/usageUtils';
+import { buildOpenAIClientOptions } from '../config/openaiConfig';
 
 type TimeIntent = 'current_time' | 'sun_times' | 'moon_times' | 'calendar';
 
@@ -65,31 +66,40 @@ export class TimeHelperAgent implements Agent {
 
     this.logger = logger;
 
-    this.agent = new OpenAIAgent({
-      model: 'gpt-4o-mini',
-      temperature: 0.3,
-      system_instruction: `You help users figure out current times around the world.
+    this.agent = new OpenAIAgent(
+      {
+        model: 'gpt-4o-mini',
+        temperature: 0.3,
+        system_instruction: `You help users figure out current times around the world.
 Use the resolve_location tool to map user text to IANA time zones whenever the location is unclear or unfamiliar.
 If multiple matches exist, ask the user to clarify before giving times. If none are found, explain what extra info you need.
 Stay in the conversation until the user has an answer or declines to continue.`,
-    });
+      },
+      buildOpenAIClientOptions()
+    );
 
-    this.locationExtractor = new OpenAIAgent({
-      model: 'gpt-4o-mini',
-      temperature: 0,
-      system_instruction:
-        'Extract the location the user wants a time for. Respond with only the location string (e.g., "Seattle, Washington, United States"). If unsure, reply with UNKNOWN.',
-    });
+    this.locationExtractor = new OpenAIAgent(
+      {
+        model: 'gpt-4o-mini',
+        temperature: 0,
+        system_instruction:
+          'Extract the location the user wants a time for. Respond with only the location string (e.g., "Seattle, Washington, United States"). If unsure, reply with UNKNOWN.',
+      },
+      buildOpenAIClientOptions()
+    );
 
-    this.intentClassifier = new OpenAIAgent({
-      model: 'gpt-4o-mini',
-      temperature: 0,
-      system_instruction: `You classify user questions about time-related information.
+    this.intentClassifier = new OpenAIAgent(
+      {
+        model: 'gpt-4o-mini',
+        temperature: 0,
+        system_instruction: `You classify user questions about time-related information.
 Return ONLY compact JSON with keys intent, location, date (example: {"intent":"current_time","location":"Seattle, Washington, United States","date":null}).
 Valid intents: current_time (current local time / time zones), sun_times (sunrise/sunset), moon_times (moonrise/moonset), calendar (public holidays or notable calendar events).
 Set location to null if unclear. Set date to an ISO string (YYYY-MM-DD) when the user specifies a day, otherwise null.
 Do not include extra text or commentary.`,
-    });
+      },
+      buildOpenAIClientOptions()
+    );
 
     if (this.locationProvider === 'agents_sdk') {
       const toolsDir = path.resolve(__dirname, '../tools');

@@ -2,6 +2,7 @@ import { OpenAIAgent } from 'openai-agents';
 
 import type { Agent, AgentContext, AgentResult } from './baseAgent';
 import { toTokenUsage } from '../utils/usageUtils';
+import { buildOpenAIClientOptions } from '../config/openaiConfig';
 
 interface OpenAiTextAgentOptions {
   id: string;
@@ -24,11 +25,14 @@ export class OpenAiTextAgent implements Agent {
     this.id = options.id;
     this.name = options.name;
     this.modelName = options.defaultModel ?? 'gpt-4o-mini';
-    this.agent = new OpenAIAgent({
-      model: this.modelName,
-      temperature: options.temperature ?? 0.5,
-      system_instruction: options.systemInstruction,
-    });
+    this.agent = new OpenAIAgent(
+      {
+        model: this.modelName,
+        temperature: options.temperature ?? 0.5,
+        system_instruction: options.systemInstruction,
+      },
+      buildOpenAIClientOptions()
+    );
   }
 
   protected buildPrompt(context: AgentContext): string {

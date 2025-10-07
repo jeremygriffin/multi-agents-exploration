@@ -3,6 +3,7 @@ import { z } from 'zod';
 
 import type { AgentId } from '../types';
 import type { InteractionLogger } from './interactionLogger';
+import { buildOpenAIClientOptions } from '../config/openaiConfig';
 
 const ResponseGuardSchema = z.object({
   status: z.enum(['ok', 'mismatch']).default('ok'),
@@ -82,7 +83,7 @@ export class ResponseGuardService {
         system_instruction: `You validate whether specialist agent responses resolve user requests.
 Return ONLY JSON matching the schema {"status": "ok" | "mismatch", "confidence": number (0-1, optional), "reason": string, "follow_up": string}.
 Treat a response as acceptable (status "ok") when the agent politely asks for missing information that is required to complete the task (for example, asking the user to specify a location before giving the time).`,
-      });
+      }, buildOpenAIClientOptions());
   }
 
   shouldEvaluate(agentId: AgentId): agentId is Exclude<AgentId, 'manager'> {

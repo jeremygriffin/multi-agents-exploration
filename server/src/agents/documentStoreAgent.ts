@@ -7,6 +7,7 @@ import { OpenAIAgent } from 'openai-agents';
 import type { Agent, AgentContext, AgentResult } from './baseAgent';
 import { ensureStorageDir, buildStoredFilename } from '../utils/fileUtils';
 import { toTokenUsage } from '../utils/usageUtils';
+import { buildOpenAIClientOptions } from '../config/openaiConfig';
 
 const MAX_SUMMARY_INPUT = 6000; // characters
 
@@ -35,11 +36,14 @@ const extractText = async (buffer: Buffer, mimetype: string, originalName: strin
 const summarizeText = async (
   text: string
 ): Promise<{ summary: string; usage?: ReturnType<typeof toTokenUsage> }> => {
-  const agent = new OpenAIAgent({
-    model: 'gpt-4o-mini',
-    temperature: 0.4,
-    system_instruction: 'You summarize documents for storage metadata. Keep it under 120 words.',
-  });
+  const agent = new OpenAIAgent(
+    {
+      model: 'gpt-4o-mini',
+      temperature: 0.4,
+      system_instruction: 'You summarize documents for storage metadata. Keep it under 120 words.',
+    },
+    buildOpenAIClientOptions()
+  );
 
   const trimmed = text.length > MAX_SUMMARY_INPUT ? `${text.slice(0, MAX_SUMMARY_INPUT)}...` : text;
   const prompt = `Summarize the following document:

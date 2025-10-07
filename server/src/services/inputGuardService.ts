@@ -2,6 +2,7 @@ import OpenAI from 'openai';
 
 import type { UploadedFile } from '../types';
 import type { InteractionLogger } from './interactionLogger';
+import { createOpenAIClient } from '../config/openaiConfig';
 
 export type InputGuardSource = 'initial' | 'voice_transcription';
 
@@ -92,9 +93,7 @@ const ensureModerationClient = (() => {
 
   return () => {
     if (!client) {
-      client = new OpenAI({
-        apiKey: process.env.OPENAI_API_KEY,
-      });
+      client = createOpenAIClient();
     }
 
     return client.moderations;
