@@ -29,7 +29,7 @@ export class OpenAiTextAgent implements Agent {
       {
         model: this.modelName,
         temperature: options.temperature ?? 0.5,
-        system_instruction: options.systemInstruction,
+        system_instruction: `${options.systemInstruction}\n\nAlways respond in English unless the user explicitly requests another language. Do not switch languages based on location or inference.`,
       },
       buildOpenAIClientOptions()
     );

@@ -372,12 +372,12 @@ const App = () => {
 
     const hasConversationHistory = messages.some((entry) => entry.role === 'user' || entry.role === 'agent');
     const greeting = hasConversationHistory
-      ? 'Hi again! We have earlier chat context available. Should I keep it in mind or start fresh?'
-      : `Voice mode is ready—feel free to speak naturally to use this tool. How can I help you today?${
+      ? 'Hi again! We have earlier chat context available. Should I keep it in mind or start fresh? We will stay in English unless you explicitly ask to switch languages.'
+      : `Voice mode is ready—feel free to speak naturally to use this tool. We will stay in English unless you explicitly ask to switch languages.${
           browserLanguageLabel
-            ? ` I noticed your browser language is set to ${browserLanguageLabel}. We can continue in English or switch languages if you prefer.`
+            ? ` I noticed your browser language is set to ${browserLanguageLabel}. Let me know if you ever want to switch languages.`
             : ''
-        }`;
+        } How can I help you today?`;
 
     const spoken = speak(greeting);
     if (spoken) {
