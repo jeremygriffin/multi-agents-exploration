@@ -213,6 +213,38 @@ const App = () => {
   const voiceMode = useVoiceMode({ sessionId, conversationId, onTranscript: handleVoiceTranscript });
   const voiceGreetingSentRef = useRef(false);
   const { status: voiceStatus, isReadyToListen, speak } = voiceMode;
+  const [browserLocale, setBrowserLocale] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (typeof navigator !== 'undefined') {
+      setBrowserLocale(navigator.language || null);
+    }
+  }, []);
+
+  const browserLanguageLabel = useMemo(() => {
+    if (!browserLocale) {
+      return null;
+    }
+
+    try {
+      const base = browserLocale.split('-')[0]?.toLowerCase() ?? browserLocale.toLowerCase();
+      if (!base || base === 'en') {
+        return null;
+      }
+
+      if (typeof Intl !== 'undefined' && typeof Intl.DisplayNames !== 'undefined') {
+        const display = new Intl.DisplayNames([browserLocale], { type: 'language' }).of(base);
+        if (display && display.toLowerCase() !== 'english') {
+          return display;
+        }
+      }
+
+      return base !== 'en' ? base : null;
+    } catch (error) {
+      console.debug('[voiceMode] failed to resolve browser language', error);
+      return null;
+    }
+  }, [browserLocale]);
 
   useEffect(() => {
     sendConversationMessageRef.current = sendConversationMessage;
@@ -341,7 +373,11 @@ const App = () => {
     const hasConversationHistory = messages.some((entry) => entry.role === 'user' || entry.role === 'agent');
     const greeting = hasConversationHistory
       ? 'Hi again! We have earlier chat context available. Should I keep it in mind or start fresh?'
-      : 'Voice mode is ready—feel free to speak naturally to use this tool. How can I help you today?';
+      : `Voice mode is ready—feel free to speak naturally to use this tool. How can I help you today?${
+          browserLanguageLabel
+            ? ` I noticed your browser language is set to ${browserLanguageLabel}. We can continue in English or switch languages if you prefer.`
+            : ''
+        }`;
 
     const spoken = speak(greeting);
     if (spoken) {
