@@ -340,8 +340,8 @@ const App = () => {
 
     const hasConversationHistory = messages.some((entry) => entry.role === 'user' || entry.role === 'agent');
     const greeting = hasConversationHistory
-      ? 'Hi again! I can keep the prior conversation in mind. Would you like to continue with that context or start fresh?'
-      : 'Hello! Voice mode is ready. How can I help you today?';
+      ? 'Hi again! We have earlier chat context available. Should I keep it in mind or start fresh?'
+      : 'Voice mode is ready—feel free to speak naturally to use this tool. How can I help you today?';
 
     const spoken = speak(greeting);
     if (spoken) {
