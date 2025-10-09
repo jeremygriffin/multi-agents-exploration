@@ -26,6 +26,12 @@ interface VoiceModeControls extends VoiceModeState {
   isReadyToListen: boolean;
 }
 
+const VAD_THRESHOLD = 0.7;
+const VAD_SILENCE_DURATION_MS = 900;
+const VAD_PREFIX_PADDING_MS = 150;
+const NOISE_REDUCTION_MODE: 'near_field' | 'far_field' = 'far_field';
+const TRANSCRIPTION_LANGUAGE = 'en';
+
 const logTransition = (from: VoiceModeStatus, to: VoiceModeStatus) => {
   console.debug('[voiceMode] transition', { from, to, at: new Date().toISOString() });
 };
@@ -360,12 +366,17 @@ export const useVoiceMode = ({ sessionId, conversationId, onTranscript }: VoiceM
                 turn_detection: {
                   type: 'server_vad',
                   create_response: false,
+                  threshold: VAD_THRESHOLD,
+                  silence_duration_ms: VAD_SILENCE_DURATION_MS,
+                  prefix_padding_ms: VAD_PREFIX_PADDING_MS,
                 },
+                input_audio_noise_reduction: { type: NOISE_REDUCTION_MODE },
+                input_audio_transcription: { language: TRANSCRIPTION_LANGUAGE },
               },
             })
           );
         } catch (err) {
-          console.warn('[voiceMode] failed to disable auto responses', err);
+          console.warn('[voiceMode] failed to configure realtime session', err);
         }
         updateReadiness();
       });

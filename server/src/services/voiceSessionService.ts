@@ -49,6 +49,25 @@ export class VoiceSessionService {
     const model = (process.env.OPENAI_REALTIME_MODEL as SessionCreateParams['model'] | undefined) ?? defaultModel;
     const voice = (process.env.OPENAI_REALTIME_VOICE as SessionCreateParams['voice'] | undefined) ?? defaultVoice;
 
+    const parseNumber = (value: string | undefined, fallback: number): number => {
+      if (!value) {
+        return fallback;
+      }
+      const parsed = Number(value);
+      return Number.isFinite(parsed) ? parsed : fallback;
+    };
+
+    const clamp = (value: number, min: number, max: number): number => Math.min(Math.max(value, min), max);
+
+    const vadThreshold = clamp(parseNumber(process.env.OPENAI_REALTIME_VAD_THRESHOLD, 0.7), 0, 1);
+    const vadSilenceMs = Math.max(parseNumber(process.env.OPENAI_REALTIME_VAD_SILENCE_MS, 900), 250);
+    const vadPrefixMs = Math.max(parseNumber(process.env.OPENAI_REALTIME_VAD_PREFIX_MS, 150), 0);
+
+    const noiseReduction = (() => {
+      const setting = process.env.OPENAI_REALTIME_NOISE_REDUCTION?.toLowerCase();
+      return setting === 'near_field' || setting === 'far_field' ? setting : 'far_field';
+    })();
+
     const rawModalities = (process.env.OPENAI_REALTIME_MODALITIES ?? 'audio,text')
       .split(',')
       .map((value) => value.trim().toLowerCase())
@@ -58,6 +77,7 @@ export class VoiceSessionService {
     const instructions = process.env.OPENAI_REALTIME_INSTRUCTIONS;
     const transcriptionModel =
       process.env.OPENAI_REALTIME_TRANSCRIPTION_MODEL ?? 'gpt-4o-mini-transcribe';
+    const transcriptionLanguage = process.env.OPENAI_REALTIME_TRANSCRIPTION_LANGUAGE ?? 'en';
 
     let realtimeSession: SessionCreateResponse;
 
@@ -66,8 +86,17 @@ export class VoiceSessionService {
         model,
         modalities: modalities.length > 0 ? modalities : ['audio', 'text'],
         voice,
+        turn_detection: {
+          type: 'server_vad',
+          create_response: false,
+          threshold: vadThreshold,
+          silence_duration_ms: vadSilenceMs,
+          prefix_padding_ms: vadPrefixMs,
+        },
+        input_audio_noise_reduction: { type: noiseReduction as 'near_field' | 'far_field' },
         input_audio_transcription: {
           model: transcriptionModel,
+          ...(transcriptionLanguage ? { language: transcriptionLanguage } : {}),
         },
         ...(instructions ? { instructions } : {}),
       });
