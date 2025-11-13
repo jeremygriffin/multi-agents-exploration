@@ -1,5 +1,12 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 
+declare global {
+  interface Window {
+    webkitAudioContext?: typeof AudioContext;
+    VOICE_TEST_CLIENT_JWT?: string;
+  }
+}
+
 import { createVoiceSession } from './api';
 import type { VoiceSessionGrant } from './types';
 
@@ -31,6 +38,58 @@ const VAD_SILENCE_DURATION_MS = 900;
 const VAD_PREFIX_PADDING_MS = 150;
 const NOISE_REDUCTION_MODE: 'near_field' | 'far_field' = 'far_field';
 const TRANSCRIPTION_LANGUAGE = 'en';
+const TRANSCRIPTION_MODEL = 'gpt-4o-mini-transcribe';
+const TARGET_SAMPLE_RATE = 16000;
+const AUDIO_CHUNK_COMMIT_INTERVAL_MS = 500;
+
+const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
+
+const downsampleToTarget = (input: Float32Array, sampleRate: number): Float32Array => {
+  if (sampleRate === TARGET_SAMPLE_RATE) {
+    return input;
+  }
+
+  const sampleRateRatio = sampleRate / TARGET_SAMPLE_RATE;
+  const newLength = Math.round(input.length / sampleRateRatio);
+  const result = new Float32Array(newLength);
+
+  let offsetResult = 0;
+  let offsetBuffer = 0;
+
+  while (offsetResult < result.length) {
+    const nextOffsetBuffer = Math.round((offsetResult + 1) * sampleRateRatio);
+    let accum = 0;
+    let count = 0;
+    for (let i = offsetBuffer; i < nextOffsetBuffer && i < input.length; i += 1) {
+      accum += input[i];
+      count += 1;
+    }
+    result[offsetResult] = count > 0 ? accum / count : 0;
+    offsetResult += 1;
+    offsetBuffer = nextOffsetBuffer;
+  }
+
+  return result;
+};
+
+const floatTo16BitPCM = (input: Float32Array): Int16Array => {
+  const output = new Int16Array(input.length);
+  for (let i = 0; i < input.length; i += 1) {
+    const s = clamp(input[i], -1, 1);
+    output[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+  }
+  return output;
+};
+
+const bufferToBase64 = (buffer: ArrayBuffer): string => {
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+  }
+  return btoa(binary);
+};
 
 const logTransition = (from: VoiceModeStatus, to: VoiceModeStatus) => {
   console.debug('[voiceMode] transition', { from, to, at: new Date().toISOString() });
@@ -52,6 +111,10 @@ export const useVoiceMode = ({ sessionId, conversationId, onTranscript }: VoiceM
   const pendingCancelRef = useRef<string[]>([]);
   const pendingSpeechQueueRef = useRef<Array<{ payload: string; expectsResponse: boolean }>>([]);
   const expectedResponseCountRef = useRef(0);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const audioProcessorRef = useRef<ScriptProcessorNode | null>(null);
+  const audioGainNodeRef = useRef<GainNode | null>(null);
+  const lastCommitRef = useRef<number>(0);
 
   const updateReadiness = useCallback(() => {
     const pcReady = peerConnectionRef.current?.connectionState === 'connected';
@@ -76,6 +139,19 @@ export const useVoiceMode = ({ sessionId, conversationId, onTranscript }: VoiceM
       clearTimeout(pendingFlushTimeoutRef.current);
       pendingFlushTimeoutRef.current = null;
     }
+    if (dataChannelRef.current && dataChannelRef.current.readyState === 'open') {
+      try {
+        dataChannelRef.current.send(
+          JSON.stringify({ type: 'input_audio_buffer.commit' })
+        );
+        dataChannelRef.current.send(
+          JSON.stringify({ type: 'input_audio_buffer.clear' })
+        );
+      } catch (err) {
+        console.debug('[voiceMode] failed to flush audio buffer on teardown', err);
+      }
+    }
+
     pendingCancelRef.current = [];
     pendingSpeechQueueRef.current = [];
     pendingTranscriptRef.current = null;
@@ -91,6 +167,22 @@ export const useVoiceMode = ({ sessionId, conversationId, onTranscript }: VoiceM
     });
     peerConnectionRef.current?.close();
     peerConnectionRef.current = null;
+
+    if (audioProcessorRef.current) {
+      audioProcessorRef.current.disconnect();
+      audioProcessorRef.current.onaudioprocess = null;
+      audioProcessorRef.current = null;
+    }
+    if (audioGainNodeRef.current) {
+      audioGainNodeRef.current.disconnect();
+      audioGainNodeRef.current = null;
+    }
+    if (audioContextRef.current) {
+      audioContextRef.current.close().catch((err) => {
+        console.debug('[voiceMode] failed to close audio context', err);
+      });
+      audioContextRef.current = null;
+    }
 
     localStreamRef.current?.getTracks().forEach((track) => {
       try {
@@ -129,6 +221,142 @@ export const useVoiceMode = ({ sessionId, conversationId, onTranscript }: VoiceM
     [onTranscript, setError]
   );
 
+  const enqueueSpeech = useCallback(
+    (text: string, expectsResponse = true) => {
+      const trimmed = text.trim();
+      if (!trimmed) {
+        console.debug('[voiceMode] speech enqueue skipped (empty)');
+        return false;
+      }
+
+      const instructionPrefix = [
+        'You are converting finalized assistant text to speech.',
+        'Ignore prior conversation context.',
+        'Say only the content between the markers verbatim with the same punctuation.',
+        'Do not add greetings, confirmations, or summaries.',
+      ].join(' ');
+
+      const payloadObject = {
+        type: 'response.create',
+        response: {
+          modalities: ['audio', 'text'],
+          conversation: 'none' as const,
+          instructions: `${instructionPrefix}\n<<<ASSISTANT_REPLY>>>\n${trimmed}\n<<<END_REPLY>>>`,
+        },
+      } as const;
+
+      const payload = JSON.stringify(payloadObject);
+      const channel = dataChannelRef.current;
+
+      console.debug('[voiceMode] speech enqueue attempt', {
+        snippet: trimmed.slice(0, 120),
+        length: trimmed.length,
+        channelState: channel?.readyState,
+      });
+      console.debug('[voiceMode] outbound instructions', payloadObject.response.instructions);
+
+      if (channel && channel.readyState === 'open') {
+        try {
+          if (expectsResponse) {
+            expectedResponseCountRef.current += 1;
+          }
+          channel.send(payload);
+          console.debug('[voiceMode] speech payload sent', {
+            expectedResponses: expectedResponseCountRef.current,
+          });
+          return true;
+        } catch (err) {
+          console.warn('[voiceMode] failed to dispatch speech command', err);
+          return false;
+        }
+      }
+
+      pendingSpeechQueueRef.current = [
+        ...pendingSpeechQueueRef.current,
+        { payload, expectsResponse },
+      ];
+      console.debug('[voiceMode] speech payload queued', {
+        queueSize: pendingSpeechQueueRef.current.length,
+        expectsResponse,
+      });
+      return true;
+    },
+    []
+  );
+
+  const startMicrophoneStreaming = useCallback(
+    async (stream: MediaStream) => {
+      if (audioContextRef.current || audioProcessorRef.current) {
+        return;
+      }
+
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) {
+        console.error('[voiceMode] AudioContext not supported in this browser');
+        return;
+      }
+      const context = new AudioCtx();
+      audioContextRef.current = context;
+      if (context.state === 'suspended') {
+        await context.resume();
+      }
+
+      const source = context.createMediaStreamSource(stream);
+      const processor = context.createScriptProcessor(4096, 1, 1);
+      audioProcessorRef.current = processor;
+
+      const gain = context.createGain();
+      gain.gain.value = 0;
+      audioGainNodeRef.current = gain;
+
+      source.connect(processor);
+      processor.connect(gain);
+      gain.connect(context.destination);
+
+      processor.onaudioprocess = (event) => {
+        const channel = dataChannelRef.current;
+        if (!channel || channel.readyState !== 'open') {
+          return;
+        }
+
+        const input = event.inputBuffer.getChannelData(0);
+        if (!input || input.length === 0) {
+          return;
+        }
+
+        const resampled = downsampleToTarget(new Float32Array(input), context.sampleRate);
+        if (resampled.length === 0) {
+          return;
+        }
+
+        const pcm = floatTo16BitPCM(resampled);
+        const base64 = bufferToBase64(pcm.buffer);
+
+        try {
+          channel.send(
+            JSON.stringify({
+              type: 'input_audio_buffer.append',
+              audio: base64,
+            })
+          );
+          const now = performance.now();
+          if (now - lastCommitRef.current > AUDIO_CHUNK_COMMIT_INTERVAL_MS) {
+            channel.send(JSON.stringify({ type: 'input_audio_buffer.commit' }));
+            lastCommitRef.current = now;
+          }
+        } catch (err) {
+          console.warn('[voiceMode] failed to stream audio chunk', err);
+        }
+      };
+
+      console.debug('[voiceMode] microphone streaming initialised', {
+        contextSampleRate: context.sampleRate,
+        targetSampleRate: TARGET_SAMPLE_RATE,
+      });
+    },
+    []
+  );
+
   const handleRealtimePayload = useCallback(
     (payload: Record<string, unknown>) => {
       const event = payload as {
@@ -141,6 +369,42 @@ export const useVoiceMode = ({ sessionId, conversationId, onTranscript }: VoiceM
       };
 
       const type = typeof event.type === 'string' ? event.type : undefined;
+
+      if (type === 'transcript.final') {
+        const finalText =
+          typeof event.text === 'string'
+            ? event.text
+            : typeof event.transcription === 'string'
+            ? event.transcription
+            : typeof event.transcript === 'string'
+            ? event.transcript
+            : undefined;
+
+        if (finalText && finalText.trim().length > 0) {
+          emitTranscript(finalText);
+        } else {
+          console.debug('[voiceMode] transcript.final missing text payload', payload);
+        }
+        return;
+      }
+
+      if (type === 'response.speak') {
+        const text =
+          typeof event.text === 'string'
+            ? event.text
+            : typeof event.delta === 'string'
+            ? event.delta
+            : undefined;
+        if (text && text.trim().length > 0) {
+          const dispatched = enqueueSpeech(text, true);
+          if (!dispatched) {
+            console.debug('[voiceMode] response.speak payload not dispatched');
+          }
+        } else {
+          console.debug('[voiceMode] response.speak missing text payload', payload);
+        }
+        return;
+      }
 
       const isInputTranscriptionEvent =
         typeof type === 'string' &&
@@ -280,7 +544,7 @@ export const useVoiceMode = ({ sessionId, conversationId, onTranscript }: VoiceM
 
       console.debug('[voiceMode] event', type ?? 'unknown', payload);
     },
-    [emitTranscript, setError]
+    [emitTranscript, enqueueSpeech, setError]
   );
 
   const start = useCallback(async () => {
@@ -359,21 +623,26 @@ export const useVoiceMode = ({ sessionId, conversationId, onTranscript }: VoiceM
           }
         }
         try {
-          dataChannel.send(
-            JSON.stringify({
-              type: 'session.update',
-              session: {
-                turn_detection: {
-                  type: 'server_vad',
-                  create_response: false,
-                  threshold: VAD_THRESHOLD,
-                  silence_duration_ms: VAD_SILENCE_DURATION_MS,
-                  prefix_padding_ms: VAD_PREFIX_PADDING_MS,
-                },
-                input_audio_noise_reduction: { type: NOISE_REDUCTION_MODE },
-                input_audio_transcription: { language: TRANSCRIPTION_LANGUAGE },
+          const updatePayload = {
+            type: 'session.update',
+            session: {
+              turn_detection: {
+                type: 'server_vad',
+                create_response: false,
+                threshold: VAD_THRESHOLD,
+                silence_duration_ms: VAD_SILENCE_DURATION_MS,
+                prefix_padding_ms: VAD_PREFIX_PADDING_MS,
               },
-            })
+              input_audio_noise_reduction: { type: NOISE_REDUCTION_MODE },
+              input_audio_transcription: {
+                model: TRANSCRIPTION_MODEL,
+                language: TRANSCRIPTION_LANGUAGE,
+              },
+            },
+          };
+          console.debug('[voiceMode] session.update payload', updatePayload);
+          dataChannel.send(
+            JSON.stringify(updatePayload)
           );
         } catch (err) {
           console.warn('[voiceMode] failed to configure realtime session', err);
@@ -385,6 +654,7 @@ export const useVoiceMode = ({ sessionId, conversationId, onTranscript }: VoiceM
         setIsReadyToListen(false);
       });
       dataChannel.addEventListener('message', (event) => {
+        console.debug('[voiceMode] data channel message raw', event.data);
         const raw = event.data;
         let text: string | null = null;
 
@@ -413,6 +683,7 @@ export const useVoiceMode = ({ sessionId, conversationId, onTranscript }: VoiceM
         for (const chunk of chunks) {
           try {
             const parsed = JSON.parse(chunk) as Record<string, unknown>;
+            console.debug('[voiceMode] data channel message parsed', parsed);
             handleRealtimePayload(parsed);
           } catch (err) {
             console.warn('[voiceMode] failed to parse realtime event', err, chunk);
@@ -425,6 +696,8 @@ export const useVoiceMode = ({ sessionId, conversationId, onTranscript }: VoiceM
       localStream.getTracks().forEach((track) => {
         pc.addTrack(track, localStream);
       });
+      lastCommitRef.current = 0;
+      await startMicrophoneStreaming(localStream);
 
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
@@ -459,7 +732,7 @@ export const useVoiceMode = ({ sessionId, conversationId, onTranscript }: VoiceM
       transition('error');
       teardown();
     }
-  }, [conversationId, handleRealtimePayload, sessionId, teardown, transition, updateReadiness]);
+  }, [conversationId, handleRealtimePayload, sessionId, startMicrophoneStreaming, teardown, transition, updateReadiness]);
 
   const stop = useCallback(() => {
     teardown();
@@ -470,65 +743,7 @@ export const useVoiceMode = ({ sessionId, conversationId, onTranscript }: VoiceM
 
   const isBusy = useMemo(() => status === 'requesting' || status === 'connecting', [status]);
 
-  const speak = useCallback(
-    (text: string) => {
-      const trimmed = text.trim();
-      if (!trimmed) {
-        console.debug('[voiceMode] speak skipped (empty)');
-        return false;
-      }
-
-      const instructionPrefix = [
-        'You are converting finalized assistant text to speech.',
-        'Ignore prior conversation context.',
-        'Say only the content between the markers verbatim with the same punctuation.',
-        'Do not add greetings, confirmations, or summaries.',
-      ].join(' ');
-
-      const payloadObject = {
-        type: 'response.create',
-        response: {
-          modalities: ['audio', 'text'],
-          conversation: 'none' as const,
-          instructions: `${instructionPrefix}\n<<<ASSISTANT_REPLY>>>\n${trimmed}\n<<<END_REPLY>>>`,
-        },
-      } as const;
-
-      const payload = JSON.stringify(payloadObject);
-      const channel = dataChannelRef.current;
-
-      console.debug('[voiceMode] speech enqueue attempt', {
-        snippet: trimmed.slice(0, 120),
-        length: trimmed.length,
-        channelState: channel?.readyState,
-      });
-      console.debug('[voiceMode] outbound instructions', payloadObject.response.instructions);
-
-      if (channel && channel.readyState === 'open') {
-        try {
-          expectedResponseCountRef.current += 1;
-          channel.send(payload);
-          console.debug('[voiceMode] speech payload sent', {
-            expectedResponses: expectedResponseCountRef.current,
-          });
-          return true;
-        } catch (err) {
-          console.warn('[voiceMode] failed to dispatch speech command', err);
-          return false;
-        }
-      }
-
-      pendingSpeechQueueRef.current = [
-        ...pendingSpeechQueueRef.current,
-        { payload, expectsResponse: true },
-      ];
-      console.debug('[voiceMode] speech payload queued', {
-        queueSize: pendingSpeechQueueRef.current.length,
-      });
-      return true;
-    },
-    []
-  );
+  const speak = useCallback((text: string) => enqueueSpeech(text, true), [enqueueSpeech]);
 
   return {
     status,

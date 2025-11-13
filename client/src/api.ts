@@ -8,14 +8,23 @@ import type {
 } from './types';
 
 const BASE_URL = import.meta.env.VITE_SERVER_BASE_URL ?? 'http://localhost:3001';
+const AUTH_TOKEN =
+  typeof import.meta.env.VITE_SERVER_BEARER_TOKEN === 'string'
+    ? import.meta.env.VITE_SERVER_BEARER_TOKEN.trim()
+    : undefined;
+
+const buildAuthHeaders = (): Record<string, string> =>
+  AUTH_TOKEN && AUTH_TOKEN.length > 0 ? { Authorization: `Bearer ${AUTH_TOKEN}` } : {};
 
 const buildJsonHeaders = (sessionId: string): HeadersInit => ({
   'Content-Type': 'application/json',
   'x-session-id': sessionId,
+  ...buildAuthHeaders(),
 });
 
 const buildSessionHeaders = (sessionId: string): HeadersInit => ({
   'x-session-id': sessionId,
+  ...buildAuthHeaders(),
 });
 
 const handleResponse = async <T>(response: Response): Promise<T> => {
@@ -99,10 +108,10 @@ export const createVoiceSession = async (
   sessionId: string,
   conversationId: string
 ): Promise<VoiceSessionResponse> => {
-  const response = await fetch(`${BASE_URL}/api/voice/sessions`, {
+  const response = await fetch(`${BASE_URL}/voice/sessions`, {
     method: 'POST',
     headers: buildJsonHeaders(sessionId),
-    body: JSON.stringify({ conversationId }),
+    body: JSON.stringify({ sessionId, conversationId }),
   });
 
   return handleResponse<VoiceSessionResponse>(response);

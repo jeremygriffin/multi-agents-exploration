@@ -51,16 +51,19 @@ export interface ResetSessionResponse {
 
 export type MessageSource = 'initial' | 'voice_transcription';
 
+export interface VoiceIceServer {
+  urls: string[];
+  username?: string;
+  credential?: string;
+}
+
 export interface VoiceSessionGrant {
-  conversationId: string;
-  userSessionId: string;
-  expiresAt: number;
-  realtimeSessionId?: string;
-  model?: string;
-  voice?: string;
+  id: string;
+  websocketUrl: string;
   clientSecret: string;
-  iceServers?: Array<{ urls: string | string[]; username?: string; credential?: string }>;
-  instructions?: string;
+  expiresAt: string;
+  iceServers: VoiceIceServer[];
+  model?: string;
 }
 
 export interface VoiceSessionResponse {

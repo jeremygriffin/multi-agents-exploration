@@ -1,3 +1,18 @@
+# Voice Agent Test Client
+
+This sample React/Vite app can exercise the voice agent stack locally. Configure the backend endpoint via `.env`:
+
+```
+VITE_SERVER_BASE_URL=http://localhost:3001
+VITE_SERVER_BEARER_TOKEN=eyJhbGciOi...
+```
+
+`VITE_SERVER_BEARER_TOKEN` is optional; provide it if your local agent instance enforces Auth0 JWTs. The client will use it for all REST requests, including `POST /voice/sessions`.
+
+Run the app with `npm install` (if dependencies are available) and `npm run dev`. Voice mode in the UI will mint a realtime session and connect to OpenAI using the grant returned by the agent service.
+
+---
+
 # React + TypeScript + Vite
 
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
